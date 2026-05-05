@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="RoBby">
+  <meta name="theme-color" content="#4A90D9" id="meta-theme-color">
+  <title>RoBby - Tracker Nou-Născut</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/app.css?v=2">
+</head>
+<body>
+<div id="app" class="theme-blue">
+
+  <!-- SPLASH -->
+  <div id="screen-splash">
+    <div class="splash-content">
+      <span class="splash-logo">🍼</span>
+      <h1 class="splash-title">RoBby</h1>
+      <p class="splash-subtitle">Tracker nou-născut</p>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <header id="app-header" class="hidden">
+    <div class="header-content">
+      <div class="header-left">
+        <span class="header-logo">🍼</span>
+        <div class="header-info">
+          <span id="header-baby-name">RoBby</span>
+          <span id="header-baby-age"></span>
+        </div>
+      </div>
+      <div class="header-right">
+        <div id="reminder-badge" class="reminder-badge hidden">
+          <span>⏰</span>
+          <span id="reminder-text"></span>
+        </div>
+        <button class="icon-btn" onclick="showScreen('settings')" title="Setări">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main id="app-main" class="hidden">
+
+    <!-- ══════════════ HOME ══════════════ -->
+    <div id="screen-home" class="screen active">
+      <div class="screen-content">
+
+        <div class="home-top">
+          <p id="home-date"></p>
+        </div>
+
+        <!-- Feeding timer -->
+        <div class="feeding-timer-card">
+          <div class="feeding-timer-top">
+            <span class="feeding-label">Următoarea hrănire</span>
+            <span id="feeding-countdown" class="feeding-countdown">calculând…</span>
+          </div>
+          <div id="next-feeding-time">--:--</div>
+          <div class="feeding-progress">
+            <div class="feeding-progress-fill" id="feeding-progress-fill" style="width:0%"></div>
+          </div>
+          <div id="next-feeding-amount"></div>
+        </div>
+
+        <!-- Stats strip -->
+        <div class="stats-strip">
+          <div class="stats-pill s-meal" onclick="showScreen('report')">
+            <span class="stats-num" id="today-meals">0</span>
+            <span class="stats-lbl">🍼 Hrăniri</span>
+            <span class="stats-sub" id="today-ml"></span>
+          </div>
+          <div class="stats-pill s-urine" onclick="showScreen('report')">
+            <span class="stats-num" id="today-urines">0</span>
+            <span class="stats-lbl">💧 Pipi</span>
+          </div>
+          <div class="stats-pill s-stool" onclick="showScreen('report')">
+            <span class="stats-num" id="today-stools">0</span>
+            <span class="stats-lbl">💩 Caca</span>
+          </div>
+        </div>
+
+        <!-- Recent entries timeline -->
+        <p class="section-title">Activitate de azi</p>
+        <div id="recent-entries">
+          <p class="empty-state">Nicio înregistrare astăzi.</p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══════════════ HRĂNIRE (Meal) ══════════════ -->
+    <div id="screen-meal" class="screen">
+      <div class="screen-content">
+        <h2 class="screen-title">🍼 Hrănire</h2>
+        <div class="card form-card">
+          <div class="form-group">
+            <label>Ora hrănirii</label>
+            <input type="datetime-local" id="meal-time" class="input">
+          </div>
+          <div class="form-group">
+            <label>Tip lapte</label>
+            <div class="toggle-group">
+              <button class="toggle-btn active" id="milk-formula" onclick="selectMilkType('formula')">🥤 Formulă</button>
+              <button class="toggle-btn" id="milk-breast" onclick="selectMilkType('breast')">🤱 Sân</button>
+            </div>
+          </div>
+          <div class="form-group" id="ml-group">
+            <label>Cantitate (ml)</label>
+            <div class="ml-input-group">
+              <button class="qty-btn" onclick="adjustMl(-10)">−</button>
+              <input type="number" id="meal-ml" class="input qty-input" value="120" min="0" max="400" step="5">
+              <button class="qty-btn" onclick="adjustMl(10)">+</button>
+            </div>
+            <div class="quick-amounts">
+              <span class="quick-badge" onclick="setMl(60)">60ml</span>
+              <span class="quick-badge" onclick="setMl(90)">90ml</span>
+              <span class="quick-badge" onclick="setMl(120)">120ml</span>
+              <span class="quick-badge" onclick="setMl(150)">150ml</span>
+              <span class="quick-badge" onclick="setMl(180)">180ml</span>
+              <span class="quick-badge" onclick="setMl(210)">210ml</span>
+            </div>
+            <div class="suggested-amount" id="suggested-amount"></div>
+          </div>
+          <div class="form-group hidden" id="breast-duration-group">
+            <label>Durata alăptare (minute)</label>
+            <div class="ml-input-group">
+              <button class="qty-btn" onclick="adjustDuration(-5)">−</button>
+              <input type="number" id="meal-duration" class="input qty-input" value="15" min="1" max="60">
+              <button class="qty-btn" onclick="adjustDuration(5)">+</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Observații (opțional)</label>
+            <textarea id="meal-notes" class="input textarea" placeholder="Ex: a mâncat bine, a vărsut puțin…"></textarea>
+          </div>
+          <button class="btn-primary btn-full" onclick="saveMeal()">✓ Salvează hrănirea</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ PIPI (Urine) — fără câmpul cantitate ══════════════ -->
+    <div id="screen-urine" class="screen">
+      <div class="screen-content">
+        <h2 class="screen-title">💧 Pipi</h2>
+        <div class="card form-card">
+          <div class="form-group">
+            <label>Ora</label>
+            <input type="datetime-local" id="urine-time" class="input">
+          </div>
+          <div class="form-group">
+            <label>Culoare</label>
+            <div class="color-options">
+              <button class="color-btn active" data-value="clear" onclick="selectUrineColor(this,'clear')">
+                <div class="color-dot" style="background:#fffde7;border:2px solid #ccc"></div>
+                <span>Clară</span>
+              </button>
+              <button class="color-btn" data-value="yellow" onclick="selectUrineColor(this,'yellow')">
+                <div class="color-dot" style="background:#FFD700"></div>
+                <span>Galbenă</span>
+              </button>
+              <button class="color-btn" data-value="dark" onclick="selectUrineColor(this,'dark')">
+                <div class="color-dot" style="background:#B8860B"></div>
+                <span>Închisă</span>
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Observații (opțional)</label>
+            <textarea id="urine-notes" class="input textarea" placeholder=""></textarea>
+          </div>
+          <button class="btn-primary btn-full" onclick="saveUrine()">✓ Salvează</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ CACA (Stool) ══════════════ -->
+    <div id="screen-stool" class="screen">
+      <div class="screen-content">
+        <h2 class="screen-title">💩 Caca</h2>
+        <div class="card form-card">
+          <div class="form-group">
+            <label>Ora</label>
+            <input type="datetime-local" id="stool-time" class="input">
+          </div>
+          <div class="form-group">
+            <label>Culoare</label>
+            <div class="color-options">
+              <button class="color-btn active" data-value="yellow" onclick="selectStoolColor(this,'yellow')">
+                <div class="color-dot" style="background:#DAA520"></div>
+                <span>Galben</span>
+              </button>
+              <button class="color-btn" data-value="green" onclick="selectStoolColor(this,'green')">
+                <div class="color-dot" style="background:#556B2F"></div>
+                <span>Verde</span>
+              </button>
+              <button class="color-btn" data-value="brown" onclick="selectStoolColor(this,'brown')">
+                <div class="color-dot" style="background:#8B4513"></div>
+                <span>Maro</span>
+              </button>
+              <button class="color-btn" data-value="black" onclick="selectStoolColor(this,'black')">
+                <div class="color-dot" style="background:#1a1a1a"></div>
+                <span>Negru</span>
+              </button>
+              <button class="color-btn" data-value="red" onclick="selectStoolColor(this,'red')">
+                <div class="color-dot" style="background:#B22222"></div>
+                <span>Roșu ⚠️</span>
+              </button>
+              <button class="color-btn" data-value="white" onclick="selectStoolColor(this,'white')">
+                <div class="color-dot" style="background:#f0f0f0;border:2px solid #ccc"></div>
+                <span>Alb ⚠️</span>
+              </button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Consistență</label>
+            <div class="toggle-group">
+              <button class="toggle-btn active" id="stool-normal" onclick="selectStoolAspect(this,'normal')">Normal</button>
+              <button class="toggle-btn" id="stool-liquid" onclick="selectStoolAspect(this,'liquid')">Lichid</button>
+              <button class="toggle-btn" id="stool-hard" onclick="selectStoolAspect(this,'hard')">Tare</button>
+              <button class="toggle-btn" id="stool-mucus" onclick="selectStoolAspect(this,'mucus')">Cu mucus</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Observații (opțional)</label>
+            <textarea id="stool-notes" class="input textarea" placeholder=""></textarea>
+          </div>
+          <button class="btn-primary btn-full" onclick="saveStool()">✓ Salvează</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ RAPORT ══════════════ -->
+    <div id="screen-report" class="screen">
+      <div class="screen-content">
+        <div class="report-header">
+          <h2 class="screen-title">📊 Raport</h2>
+          <div class="date-nav">
+            <button class="date-nav-btn" onclick="changeReportDate(-1)">◀</button>
+            <span id="report-date-display"></span>
+            <button class="date-nav-btn" onclick="changeReportDate(1)" id="report-next-btn">▶</button>
+          </div>
+        </div>
+        <div id="report-stats" class="report-stats"></div>
+        <div id="report-entries"></div>
+        <button class="btn-secondary btn-full export-btn" onclick="exportPrint()">📄 Exportă PDF pentru doctor</button>
+      </div>
+    </div>
+
+    <!-- ══════════════ SETĂRI ══════════════ -->
+    <div id="screen-settings" class="screen">
+      <div class="screen-content">
+        <h2 class="screen-title">⚙️ Setări</h2>
+
+        <div class="card settings-card">
+          <h3 class="card-title">👶 Informații bebeluș</h3>
+          <div class="form-group">
+            <label>Numele bebelușului</label>
+            <input type="text" id="setting-baby-name" class="input" placeholder="ex: Andrei">
+          </div>
+          <div class="form-group">
+            <label>Data nașterii</label>
+            <input type="date" id="setting-birth-date" class="input">
+          </div>
+          <div class="form-group">
+            <label>Gen</label>
+            <div class="toggle-group">
+              <button class="toggle-btn" id="gender-boy" onclick="selectGender('boy')">👦 Băiat</button>
+              <button class="toggle-btn" id="gender-girl" onclick="selectGender('girl')">👧 Fată</button>
+            </div>
+          </div>
+          <button class="btn-primary btn-full" onclick="saveSettings()">Salvează</button>
+        </div>
+
+        <div class="card settings-card">
+          <h3 class="card-title">🥤 Formulă lapte</h3>
+          <div class="form-group">
+            <label>Marcă formulă</label>
+            <input type="text" id="setting-formula" class="input" placeholder="ex: NAN Supreme Pro 1">
+          </div>
+          <button class="btn-secondary btn-full" onclick="saveSettings()">Salvează</button>
+        </div>
+
+        <div class="card settings-card">
+          <h3 class="card-title">⏰ Remindere hrănire</h3>
+          <div class="form-group">
+            <div class="toggle-row">
+              <label>Activează remindere</label>
+              <label class="switch">
+                <input type="checkbox" id="setting-reminders" onchange="toggleReminders(this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+          <div id="reminder-settings" class="hidden">
+            <div class="form-group">
+              <label>Interval personalizat (ore, opțional)</label>
+              <input type="number" id="setting-interval" class="input" min="1" max="8" step="0.5" placeholder="Automat bazat pe vârstă">
+            </div>
+            <button class="btn-secondary btn-full" onclick="saveSettings()">Salvează</button>
+          </div>
+        </div>
+
+        <div class="card settings-card">
+          <h3 class="card-title">🎨 Temă culoare</h3>
+          <div class="theme-options">
+            <button class="theme-option active" id="theme-blue" onclick="selectTheme('blue')">
+              <div class="theme-preview blue-preview"></div>
+              <span>Baby Blue</span>
+            </button>
+            <button class="theme-option" id="theme-pink" onclick="selectTheme('pink')">
+              <div class="theme-preview pink-preview"></div>
+              <span>Cotton Pink</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="card settings-card">
+          <h3 class="card-title">👨‍👩‍👧 Sincronizare familie</h3>
+          <p class="help-text">Sincronizați datele cu celălalt părinte în timp real.</p>
+          <div class="form-group">
+            <label>Codul familiei</label>
+            <div class="code-display">
+              <span id="family-code-text">—</span>
+              <button class="icon-btn" onclick="copyFamilyCode()" title="Copiază">📋</button>
+            </div>
+          </div>
+          <div class="sync-buttons">
+            <button class="btn-primary" onclick="createFamily()">Creează familie nouă</button>
+            <div class="or-divider">sau</div>
+            <div class="join-family">
+              <input type="text" id="join-code" class="input" placeholder="COD FAMILIE" maxlength="6" style="letter-spacing:3px;text-transform:uppercase">
+              <button class="btn-secondary" onclick="joinFamily()">Alătură-te</button>
+            </div>
+          </div>
+          <div id="sync-status" class="sync-status"></div>
+
+          <details class="firebase-config">
+            <summary>⚙️ Configurare Firebase (pentru sincronizare)</summary>
+            <p class="help-text" style="margin-top:12px">
+              1. Mergeți pe <strong>firebase.google.com</strong><br>
+              2. Creați proiect nou gratuit<br>
+              3. Activați <strong>Realtime Database</strong><br>
+              4. Copiați configurația de mai jos
+            </p>
+            <div class="form-group">
+              <label>API Key</label>
+              <input type="text" id="fb-api-key" class="input small-input" placeholder="AIza…">
+            </div>
+            <div class="form-group">
+              <label>Auth Domain</label>
+              <input type="text" id="fb-auth-domain" class="input small-input" placeholder="proiect.firebaseapp.com">
+            </div>
+            <div class="form-group">
+              <label>Project ID</label>
+              <input type="text" id="fb-project-id" class="input small-input" placeholder="robby-familia-mea">
+            </div>
+            <div class="form-group">
+              <label>Database URL</label>
+              <input type="text" id="fb-db-url" class="input small-input" placeholder="https://proiect-rtdb.firebaseio.com">
+            </div>
+            <div class="form-group">
+              <label>App ID</label>
+              <input type="text" id="fb-app-id" class="input small-input" placeholder="1:xxx:web:xxx">
+            </div>
+            <button class="btn-primary btn-full" onclick="saveFirebaseConfig()">Conectează Firebase</button>
+          </details>
+        </div>
+
+        <button class="btn-danger btn-full" onclick="confirmClearData()" style="margin-top:4px">🗑️ Șterge toate datele</button>
+        <p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:20px;padding-bottom:4px">RoBby v2.0 · Made with ❤️ for parents</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ══════════════ BOTTOM NAV ══════════════ -->
+  <nav id="bottom-nav" class="hidden">
+    <button class="nav-btn active" data-screen="home" onclick="showScreen('home')">
+      <span class="nav-icon">🏠</span>
+      <span class="nav-label">Acasă</span>
+    </button>
+    <button class="nav-btn" data-screen="meal" onclick="showScreen('meal')">
+      <span class="nav-icon">🍼</span>
+      <span class="nav-label">Hrănire</span>
+    </button>
+    <button class="nav-btn" data-screen="urine" onclick="showScreen('urine')">
+      <span class="nav-icon">💧</span>
+      <span class="nav-label">Pipi</span>
+    </button>
+    <button class="nav-btn" data-screen="stool" onclick="showScreen('stool')">
+      <span class="nav-icon">💩</span>
+      <span class="nav-label">Caca</span>
+    </button>
+    <button class="nav-btn" data-screen="report" onclick="showScreen('report')">
+      <span class="nav-icon">📊</span>
+      <span class="nav-label">Raport</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast hidden"></div>
+
+<!-- Modal -->
+<div id="modal" class="modal-overlay hidden">
+  <div class="modal">
+    <h3 id="modal-title"></h3>
+    <p id="modal-message"></p>
+    <div class="modal-buttons">
+      <button class="btn-secondary" onclick="closeModal()">Anulare</button>
+      <button class="btn-danger" id="modal-confirm-btn">Confirmare</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase lazy-loaded when config is saved -->
+<script>
+window.FIREBASE_LOADED = false;
+function loadFirebase() {
+  return new Promise((resolve, reject) => {
+    if (window.FIREBASE_LOADED) { resolve(); return; }
+    const srcs = [
+      'https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js',
+      'https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js'
+    ];
+    let n = 0;
+    srcs.forEach(src => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = () => { if (++n === srcs.length) { window.FIREBASE_LOADED = true; resolve(); } };
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  });
+}
+</script>
+<script src="js/app.js?v=2"></script>
+</body>
+</html>
