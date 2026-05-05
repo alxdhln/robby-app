@@ -34,6 +34,7 @@
         </div>
       </div>
       <div class="header-right">
+        <select id="baby-selector" class="baby-selector" onchange="switchActiveBaby(this.value)" title="Selectează bebelușul activ"></select>
         <div id="reminder-badge" class="reminder-badge hidden">
           <span>⏰</span>
           <span id="reminder-text"></span>
@@ -58,6 +59,8 @@
         <div class="home-top">
           <p id="home-date"></p>
         </div>
+        <div id="notification-fallback-banner" class="notification-fallback-banner hidden"></div>
+        <div id="feeding-alert-banner" class="feeding-alert-banner hidden"></div>
 
         <!-- Feeding timer -->
         <div class="feeding-timer-card">
@@ -88,6 +91,12 @@
             <span class="stats-lbl">💩 Caca</span>
           </div>
         </div>
+
+        <div class="quick-actions">
+          <button class="btn-secondary" onclick="showScreen('temperature')">🌡️ Temperatură</button>
+          <button class="btn-secondary" onclick="showScreen('medication')">💊 Medicație</button>
+        </div>
+        <div id="vitamin-d-status" class="vitamin-d-status"></div>
 
         <!-- Recent entries timeline -->
         <p class="section-title">Activitate de azi</p>
@@ -239,6 +248,120 @@
       </div>
     </div>
 
+    <!-- ══════════════ TEMPERATURĂ ══════════════ -->
+    <div id="screen-temperature" class="screen">
+      <div class="screen-content">
+        <h2 class="screen-title">🌡️ Temperatură</h2>
+        <div class="card form-card">
+          <div class="form-group">
+            <label>Ora măsurării</label>
+            <input type="datetime-local" id="temp-time" class="input">
+          </div>
+          <div class="form-group">
+            <label>Temperatură (°C)</label>
+            <input type="number" id="temp-value" class="input" min="34" max="42" step="0.1" placeholder="ex: 36.8">
+          </div>
+          <div class="form-group">
+            <label>Observații (opțional)</label>
+            <textarea id="temp-notes" class="input textarea" placeholder=""></textarea>
+          </div>
+          <button class="btn-primary btn-full" onclick="saveTemperature()">✓ Salvează temperatura</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ MEDICAȚIE ══════════════ -->
+    <div id="screen-medication" class="screen">
+      <div class="screen-content">
+        <h2 class="screen-title">💊 Medicație</h2>
+        <div class="card form-card">
+          <div class="form-group">
+            <label>Ora administrării</label>
+            <input type="datetime-local" id="med-time" class="input">
+          </div>
+          <div class="form-group">
+            <label>Nume medicament</label>
+            <input type="text" id="med-name" class="input" placeholder="ex: Vitamin D">
+            <div class="quick-amounts">
+              <span class="quick-badge" onclick="setMedicationName('Vitamin D')">Vitamin D</span>
+              <span class="quick-badge" onclick="setMedicationName('Probiotice')">Probiotice</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Doză</label>
+            <div class="ml-input-group">
+              <input type="number" id="med-dose" class="input" min="0" step="0.1" placeholder="ex: 5">
+              <select id="med-unit" class="input">
+                <option value="drops">picături</option>
+                <option value="ml">ml</option>
+                <option value="mg">mg</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="toggle-row">
+              <label>Marchează ca Vitamina D</label>
+              <label class="switch">
+                <input type="checkbox" id="med-vitamin-d">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Observații (opțional)</label>
+            <textarea id="med-notes" class="input textarea" placeholder=""></textarea>
+          </div>
+          <div class="settings-actions-row">
+            <button class="btn-primary" onclick="saveMedication()">✓ Salvează medicația</button>
+            <button class="btn-secondary" onclick="logQuickVitaminD()">+ Vitamina D acum</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════ RAPORT ══════════════ -->
+    <div id="screen-statistics" class="screen">
+      <div class="screen-content">
+        <h2 class="screen-title">📈 Statistici</h2>
+        <div id="statistics-content"></div>
+      </div>
+    </div>
+
+    <div id="screen-growth" class="screen">
+      <div class="screen-content">
+        <h2 class="screen-title">📏 Creștere</h2>
+        <div class="card form-card">
+          <div class="form-group">
+            <label>Data măsurării</label>
+            <input type="date" id="growth-date" class="input">
+          </div>
+          <div class="form-group">
+            <label>Greutate (kg)</label>
+            <input type="number" id="growth-weight" class="input" min="1" max="20" step="0.01" placeholder="ex: 4.25">
+          </div>
+          <div class="form-group">
+            <label>Înălțime (cm)</label>
+            <input type="number" id="growth-height" class="input" min="30" max="120" step="0.1" placeholder="ex: 54.2">
+          </div>
+          <div class="form-group">
+            <label>Perimetru cranian (cm)</label>
+            <input type="number" id="growth-head" class="input" min="20" max="70" step="0.1" placeholder="ex: 36.0">
+          </div>
+          <button class="btn-primary btn-full" onclick="saveGrowthRecord()">✓ Salvează măsurarea</button>
+        </div>
+        <div id="growth-insight" class="chart-note"></div>
+        <div id="growth-charts"></div>
+      </div>
+    </div>
+
+    <div id="screen-vaccines" class="screen">
+      <div class="screen-content">
+        <h2 class="screen-title">💉 Vaccinuri</h2>
+        <div id="vaccines-due-banner" class="notification-fallback-banner hidden"></div>
+        <div id="vaccines-list"></div>
+      </div>
+    </div>
+
     <!-- ══════════════ RAPORT ══════════════ -->
     <div id="screen-report" class="screen">
       <div class="screen-content">
@@ -264,12 +387,30 @@
         <div class="card settings-card">
           <h3 class="card-title">👶 Informații bebeluș</h3>
           <div class="form-group">
-            <label>Numele bebelușului</label>
+            <label>Profiluri existente</label>
+            <div id="baby-profiles-list" class="baby-profiles-list"></div>
+          </div>
+          <div class="form-group">
+            <label>Nume</label>
             <input type="text" id="setting-baby-name" class="input" placeholder="ex: Andrei">
           </div>
           <div class="form-group">
             <label>Data nașterii</label>
             <input type="date" id="setting-birth-date" class="input">
+          </div>
+          <div class="form-group">
+            <label>Greutate la naștere (kg)</label>
+            <input type="number" id="setting-birth-weight" class="input" placeholder="ex: 3.2" min="0.5" max="8" step="0.01">
+          </div>
+          <div class="form-group">
+            <label>Grupa sanguină</label>
+            <input type="text" id="setting-blood-type" class="input" placeholder="ex: O+, A-, B+, AB+">
+          </div>
+          <div class="form-group">
+            <label>Poză profil (opțional)</label>
+            <input type="file" id="setting-baby-photo" class="input" accept="image/*" onchange="onBabyPhotoSelected(event)">
+            <input type="hidden" id="setting-baby-photo-data">
+            <div id="baby-photo-preview" class="baby-photo-preview hidden"></div>
           </div>
           <div class="form-group">
             <label>Gen</label>
@@ -278,7 +419,11 @@
               <button class="toggle-btn" id="gender-girl" onclick="selectGender('girl')">👧 Fată</button>
             </div>
           </div>
-          <button class="btn-primary btn-full" onclick="saveSettings()">Salvează</button>
+          <div class="settings-actions-row">
+            <button class="btn-primary" onclick="saveSettings()">Salvează profilul</button>
+            <button class="btn-secondary" onclick="createNewBabyProfile()">Profil nou</button>
+            <button class="btn-danger" onclick="deleteCurrentBabyProfile()">Șterge profilul</button>
+          </div>
         </div>
 
         <div class="card settings-card">
@@ -291,23 +436,47 @@
         </div>
 
         <div class="card settings-card">
-          <h3 class="card-title">⏰ Remindere hrănire</h3>
+          <h3 class="card-title">🔔 Notificări</h3>
           <div class="form-group">
             <div class="toggle-row">
-              <label>Activează remindere</label>
+              <label>Alertă hrănire întârziată</label>
               <label class="switch">
-                <input type="checkbox" id="setting-reminders" onchange="toggleReminders(this.checked)">
+                <input type="checkbox" id="setting-feeding-alert-enabled" onchange="toggleNotificationSetting('feedingAlert', this.checked)">
                 <span class="slider"></span>
               </label>
             </div>
           </div>
-          <div id="reminder-settings" class="hidden">
-            <div class="form-group">
-              <label>Interval personalizat (ore, opțional)</label>
-              <input type="number" id="setting-interval" class="input" min="1" max="8" step="0.5" placeholder="Automat bazat pe vârstă">
-            </div>
-            <button class="btn-secondary btn-full" onclick="saveSettings()">Salvează</button>
+          <div class="form-group">
+            <label>Limită hrănire (ore, default 3)</label>
+            <input type="number" id="setting-feeding-alert-limit" class="input" min="1" max="8" step="0.5" placeholder="3">
           </div>
+          <div class="form-group">
+            <div class="toggle-row">
+              <label>Reminder zilnic Vitamina D</label>
+              <label class="switch">
+                <input type="checkbox" id="setting-vitamin-d-enabled" onchange="toggleNotificationSetting('vitaminD', this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Ora reminder Vitamina D</label>
+            <input type="time" id="setting-vitamin-d-time" class="input" value="09:00" onchange="setVitaminDReminderTime(this.value)">
+          </div>
+          <div class="form-group">
+            <div class="toggle-row">
+              <label>Alertă vaccin scadent curând</label>
+              <label class="switch">
+                <input type="checkbox" id="setting-vaccine-due-enabled" onchange="toggleNotificationSetting('vaccineDue', this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Interval personalizat hrănire (ore, opțional)</label>
+            <input type="number" id="setting-interval" class="input" min="1" max="8" step="0.5" placeholder="Automat bazat pe vârstă">
+          </div>
+          <button class="btn-secondary btn-full" onclick="saveSettings()">Salvează notificările</button>
         </div>
 
         <div class="card settings-card">
@@ -405,12 +574,25 @@
       <span class="nav-icon">📊</span>
       <span class="nav-label">Raport</span>
     </button>
+    <button class="nav-btn" data-screen="statistics" onclick="showScreen('statistics')">
+      <span class="nav-icon">📈</span>
+      <span class="nav-label">Statistici</span>
+    </button>
+    <button class="nav-btn" data-screen="growth" onclick="showScreen('growth')">
+      <span class="nav-icon">📏</span>
+      <span class="nav-label">Creștere</span>
+    </button>
+    <button class="nav-btn" data-screen="vaccines" onclick="showScreen('vaccines')">
+      <span class="nav-icon">💉</span>
+      <span class="nav-label">Vaccinuri</span>
+    </button>
   </nav>
 
 </div>
 
 <!-- Toast -->
 <div id="toast" class="toast hidden"></div>
+<div id="pdf-progress" class="pdf-progress hidden"></div>
 
 <!-- Modal -->
 <div id="modal" class="modal-overlay hidden">
@@ -445,6 +627,8 @@ function loadFirebase() {
   });
 }
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="js/app.js?v=2"></script>
 </body>
 </html>
