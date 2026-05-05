@@ -1378,107 +1378,390 @@ function changeReportDate(delta) {
   refreshReport();
 }
 
+// ─── PDF CHART HELPERS (Canvas 2D – no html2canvas needed) ───
+
+function _pdfCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+  return { c, ctx };
+}
+
+function buildPdfDiaperChartImg() {
+  const data = getDiaperStatsLast7Days();
+  const CW = 700, CH = 260;
+  const { c, ctx } = _pdfCanvas(CW, CH);
+  const PL = 10, PR = 10, PT = 30, PB = 34;
+  const chartW = CW - PL - PR;
+  const chartH = CH - PT - PB;
+
+  ctx.fillStyle = '#222222';
+  ctx.font = 'bold 16px Arial';
+  ctx.textAlign = 'left';
+  ctx.fillText('Scutece / zi (ultimele 7 zile)', PL, 20);
+
+  const n = data.length;
+  const slotW = chartW / n;
+  const barW = Math.max(14, slotW * 0.52);
+  const max = Math.max(1, ...data.map(d => (d.wet || 0) + (d.dirty || 0)));
+
+  for (let v = 0; v <= max; v++) {
+    const gy = PT + chartH - (v / max) * chartH;
+    ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PL, gy); ctx.lineTo(CW - PR, gy); ctx.stroke();
+    if (v > 0) {
+      ctx.fillStyle = '#aaaaaa'; ctx.font = '11px Arial'; ctx.textAlign = 'right';
+      ctx.fillText(String(v), PL - 2, gy + 4);
+    }
+  }
+
+  data.forEach((d, i) => {
+    const bx = PL + i * slotW + (slotW - barW) / 2;
+    const baseY = PT + chartH;
+    const dirtyH = ((d.dirty || 0) / max) * chartH;
+    const wetH   = ((d.wet   || 0) / max) * chartH;
+    if (dirtyH > 0) { ctx.fillStyle = '#d7b48b'; ctx.fillRect(bx, baseY - dirtyH, barW, dirtyH); }
+    if (wetH > 0)   { ctx.fillStyle = '#8ec5ff'; ctx.fillRect(bx, baseY - dirtyH - wetH, barW, wetH); }
+    ctx.fillStyle = '#666666'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(d.day, bx + barW / 2, baseY + 18);
+  });
+
+  const legY = CH - 6;
+  ctx.fillStyle = '#8ec5ff'; ctx.fillRect(PL, legY - 13, 13, 13);
+  ctx.fillStyle = '#333333'; ctx.font = '11px Arial'; ctx.textAlign = 'left';
+  ctx.fillText('Pipi (umed)', PL + 16, legY);
+  ctx.fillStyle = '#d7b48b'; ctx.fillRect(PL + 108, legY - 13, 13, 13);
+  ctx.fillStyle = '#333333'; ctx.fillText('Caca (murdar)', PL + 124, legY);
+  return c.toDataURL('image/png');
+}
+
+function buildPdfFeedingIntervalsChartImg() {
+  const data = getFeedingIntervalsLast7Days();
+  const CW = 700, CH = 260;
+  const { c, ctx } = _pdfCanvas(CW, CH);
+  const PL = 38, PR = 12, PT = 30, PB = 34;
+  const chartW = CW - PL - PR;
+  const chartH = CH - PT - PB;
+
+  ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
+  ctx.fillText('Interval mediu intre hraniri / zi (minute)', 10, 20);
+
+  const vals = data.map(d => d.avgMin || 0);
+  const max = Math.max(60, ...vals);
+  const gridMax = Math.ceil(max / 60) * 60;
+
+  for (let v = 0; v <= gridMax; v += 60) {
+    const gy = PT + chartH - (v / gridMax) * chartH;
+    ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PL, gy); ctx.lineTo(CW - PR, gy); ctx.stroke();
+    ctx.fillStyle = '#aaaaaa'; ctx.font = '11px Arial'; ctx.textAlign = 'right';
+    ctx.fillText(String(v), PL - 4, gy + 4);
+  }
+
+  const n = data.length;
+  const stepX = chartW / Math.max(1, n - 1);
+  const pts = data.map((d, i) => ({
+    x: PL + i * stepX,
+    y: PT + chartH - ((d.avgMin || 0) / gridMax) * chartH,
+    val: d.avgMin || 0, day: d.day,
+  }));
+
+  if (pts.length > 1) {
+    ctx.strokeStyle = '#4a90d9'; ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+  }
+
+  pts.forEach(p => {
+    ctx.fillStyle = '#2c6fad'; ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#666666'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(p.day, p.x, PT + chartH + 18);
+    if (p.val > 0) {
+      ctx.fillStyle = '#333333'; ctx.font = 'bold 10px Arial';
+      ctx.fillText(p.val + 'm', p.x, p.y - 9);
+    }
+  });
+
+  ctx.fillStyle = '#999999'; ctx.font = '10px Arial'; ctx.textAlign = 'left';
+  ctx.fillText('Media intervalelor (minute) dintre hraniri consecutive per zi', PL, CH - 7);
+  return c.toDataURL('image/png');
+}
+
+function buildPdfMealMlChartImg() {
+  const data = getLastNDates(7).map(date => {
+    const meals = getEntriesForDate(date).filter(e => e.type === 'meal' && e.milkType === 'formula');
+    return { day: formatShortDay(date), totalMl: meals.reduce((s, m) => s + (m.ml || 0), 0) };
+  });
+
+  const CW = 700, CH = 260;
+  const { c, ctx } = _pdfCanvas(CW, CH);
+  const PL = 40, PR = 10, PT = 30, PB = 34;
+  const chartW = CW - PL - PR;
+  const chartH = CH - PT - PB;
+
+  ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
+  ctx.fillText('Total ml formula / zi (ultimele 7 zile)', 10, 20);
+
+  const max = Math.max(50, ...data.map(d => d.totalMl));
+  const gridMax = Math.ceil(max / 100) * 100;
+  const n = data.length;
+  const slotW = chartW / n;
+  const barW = Math.max(14, slotW * 0.52);
+
+  for (let v = 0; v <= gridMax; v += 100) {
+    const gy = PT + chartH - (v / gridMax) * chartH;
+    ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PL, gy); ctx.lineTo(CW - PR, gy); ctx.stroke();
+    ctx.fillStyle = '#aaaaaa'; ctx.font = '11px Arial'; ctx.textAlign = 'right';
+    ctx.fillText(String(v), PL - 4, gy + 4);
+  }
+
+  data.forEach((d, i) => {
+    const bx = PL + i * slotW + (slotW - barW) / 2;
+    const baseY = PT + chartH;
+    const bh = (d.totalMl / gridMax) * chartH;
+    ctx.fillStyle = '#7bc8f6';
+    if (bh > 0) ctx.fillRect(bx, baseY - bh, barW, bh);
+    if (d.totalMl > 0) {
+      ctx.fillStyle = '#333333'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
+      ctx.fillText(d.totalMl + 'ml', bx + barW / 2, Math.max(baseY - bh - 4, PT + 14));
+    }
+    ctx.fillStyle = '#666666'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(d.day, bx + barW / 2, baseY + 18);
+  });
+
+  return c.toDataURL('image/png');
+}
+
+function buildPdfGrowthChartImg(metricKey, title, unit, valueAccessor) {
+  const records = getGrowthRecordsForActiveBaby();
+  if (!records.length) return null;
+
+  const CW = 700, CH = 260;
+  const { c, ctx } = _pdfCanvas(CW, CH);
+  const PL = 42, PR = 22, PT = 30, PB = 28;
+  const chartW = CW - PL - PR;
+  const chartH = CH - PT - PB;
+
+  ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
+  ctx.fillText(title, 10, 20);
+
+  const dataset = WHO_GROWTH[metricKey];
+  const maxM = 12;
+  const minV = dataset.p3[0] * 0.96;
+  const maxV = dataset.p97[maxM] * 1.04;
+  const toX = m => PL + (m / maxM) * chartW;
+  const toY = v => PT + chartH - ((v - minV) / (maxV - minV)) * chartH;
+
+  const whoLines = [
+    { key: 'p3',  color: '#f2b6b6', label: 'P3'  },
+    { key: 'p15', color: '#f6c896', label: 'P15' },
+    { key: 'p50', color: '#98d898', label: 'P50' },
+    { key: 'p85', color: '#f6c896', label: 'P85' },
+    { key: 'p97', color: '#9fd0d8', label: 'P97' },
+  ];
+  whoLines.forEach(({ key, color, label }) => {
+    const pts = dataset[key];
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    pts.forEach((v, m) => m === 0 ? ctx.moveTo(toX(m), toY(v)) : ctx.lineTo(toX(m), toY(v)));
+    ctx.stroke();
+    ctx.fillStyle = color; ctx.font = '10px Arial'; ctx.textAlign = 'left';
+    ctx.fillText(label, toX(maxM) + 3, toY(pts[maxM]) + 3);
+  });
+
+  records.forEach(r => {
+    const m = ageMonthsForRecord(r.date);
+    const v = valueAccessor(r);
+    if (m === null || !Number.isFinite(v)) return;
+    ctx.fillStyle = '#e74c3c'; ctx.beginPath();
+    ctx.arc(toX(m), toY(v), 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#222222'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(`${v}${unit}`, toX(m), toY(v) - 8);
+  });
+
+  for (let m = 0; m <= maxM; m++) {
+    ctx.fillStyle = '#888888'; ctx.font = '10px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(`${m}L`, toX(m), PT + chartH + 16);
+  }
+  const yStep = (maxV - minV) / 4;
+  for (let i = 0; i <= 4; i++) {
+    const v = minV + i * yStep;
+    ctx.fillStyle = '#aaaaaa'; ctx.font = '10px Arial'; ctx.textAlign = 'right';
+    ctx.fillText(v.toFixed(1), PL - 4, toY(v) + 3);
+  }
+  ctx.fillStyle = '#999999'; ctx.font = '10px Arial'; ctx.textAlign = 'left';
+  ctx.fillText('Curbe WHO: P3 / P15 / P50 / P85 / P97  |  Axa X: luna de viata', PL, CH - 7);
+  return c.toDataURL('image/png');
+}
+
 // ─── PDF EXPORT ──────────────────────────────────────────────
 async function exportPrint() {
   const jsPdfNs = window.jspdf;
-  if (!window.html2canvas || !jsPdfNs?.jsPDF) {
+  if (!jsPdfNs?.jsPDF) {
     showModal(
       'Export PDF indisponibil',
-      'Lipsesc librăriile PDF (html2canvas/jsPDF). Verificați conexiunea și reîncercați.',
+      'Lipseste libraria jsPDF. Verificati conexiunea si reincercati.',
       () => exportPrint()
     );
     return;
   }
-  const baby = getActiveBaby();
+  const baby    = getActiveBaby();
   const entries = getEntriesForDate(state.reportDate);
-  const meals = entries.filter(e => e.type === 'meal');
-  const urines = entries.filter(e => e.type === 'urine');
-  const stools = entries.filter(e => e.type === 'stool');
-  const temps = entries.filter(e => e.type === 'temperature');
-  const meds = entries.filter(e => e.type === 'medication');
-  const sleeps = entries.filter(e => e.type === 'sleep');
+  const meals   = entries.filter(e => e.type === 'meal');
+  const urines  = entries.filter(e => e.type === 'urine');
+  const stools  = entries.filter(e => e.type === 'stool');
+  const temps   = entries.filter(e => e.type === 'temperature');
+  const meds    = entries.filter(e => e.type === 'medication');
   const totalMl = meals.filter(m => m.milkType === 'formula').reduce((s, m) => s + (m.ml || 0), 0);
-  const sleepHours = sleeps.reduce((s, x) => s + Number(x.durationHours || 0), 0);
 
   const { jsPDF } = jsPdfNs;
-  setPdfProgress('Pregătesc pagina 1 din 2...');
+  setPdfProgress('Generez pagina 1...');
   try {
-    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const doc   = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
     const pageW = doc.internal.pageSize.getWidth();
-    let y = 14;
-    doc.setFontSize(16);
-    doc.text('RoBby - Raport zilnic', 12, y);
-    y += 8;
-    doc.setFontSize(10);
-    doc.text(`Bebeluș: ${baby?.name || 'N/A'}`, 12, y);
-    doc.text(`Data: ${formatDateShort(state.reportDate)}`, 90, y);
-    y += 7;
-    doc.text(`Hrăniri: ${meals.length} (${totalMl} ml formulă)`, 12, y);
-    doc.text(`Scutece: ${urines.length + stools.length}`, 90, y);
-    y += 6;
-    doc.text(`Somn: ${sleepHours.toFixed(1)}h`, 12, y);
-    doc.text(`Temperaturi: ${temps.length}`, 90, y);
-    y += 6;
-    doc.text(`Medicații: ${meds.length}`, 12, y);
-    y += 8;
+    const pageH = doc.internal.pageSize.getHeight();
 
-    const lines = entries
-      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
-      .map(e => {
-        if (e.type === 'meal') return `${formatTime(e.timestamp)} · Hrănire ${e.milkType === 'breast' ? (e.duration || '—') + ' min' : (e.ml || 0) + ' ml'}`;
-        if (e.type === 'urine') return `${formatTime(e.timestamp)} · Pipi ${urineColorLabel(e.color)}`;
-        if (e.type === 'stool') return `${formatTime(e.timestamp)} · Caca ${stoolColorLabel(e.color)}`;
-        if (e.type === 'temperature') return `${formatTime(e.timestamp)} · Temperatură ${Number(e.valueC).toFixed(1)}°C`;
-        if (e.type === 'medication') return `${formatTime(e.timestamp)} · ${e.name} ${e.dose || '—'} ${e.unit || ''}`;
-        return `${formatTime(e.timestamp)} · ${e.type}`;
-      });
-    doc.setFontSize(11);
-    doc.text('Sumar zilnic', 12, y);
+    // ── PAGE 1: Daily report ──────────────────────────────────
+    doc.setFillColor(74, 144, 217);
+    doc.rect(0, 0, pageW, 18, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text('RoBby  -  Raport zilnic', 12, 12);
+    doc.setFont('helvetica', 'normal');
+
+    let y = 24;
+    doc.setTextColor(40, 40, 40);
+    doc.setFontSize(10);
+    doc.text(`Bebelus: ${baby?.name || '—'}`, 12, y);
+    doc.text(`Data: ${formatDateShort(state.reportDate)}`, pageW / 2, y);
     y += 5;
+    if (baby?.birthDate) {
+      const ageDays = Math.floor((new Date(state.reportDate) - new Date(baby.birthDate)) / 86400000);
+      const ageM    = Math.floor(ageDays / 30.4375);
+      const ageW    = Math.floor(ageDays / 7);
+      const ageStr  = ageM > 0
+        ? `${ageM} lun${ageM === 1 ? 'a' : 'i'} (${ageW} sapt.)`
+        : `${ageW} saptamani`;
+      doc.text(`Varsta: ${ageStr}`, 12, y);
+      y += 5;
+    }
+
+    y += 2;
+    doc.setFillColor(240, 246, 253);
+    doc.rect(8, y, pageW - 16, 20, 'F');
+    doc.setFontSize(9.5);
+    doc.text(`Hraniri: ${meals.length}  (${totalMl} ml formula)`, 12, y + 6);
+    doc.text(`Pipi: ${urines.length}`, 90, y + 6);
+    doc.text(`Caca: ${stools.length}`, 130, y + 6);
+    doc.text(`Temperaturi: ${temps.length}`, 12, y + 15);
+    doc.text(`Medicatii: ${meds.length}`, 90, y + 15);
+    y += 26;
+
+    doc.setFontSize(10.5);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Jurnal zilnic', 12, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setDrawColor(220, 220, 220);
+    doc.line(12, y + 1.5, pageW - 12, y + 1.5);
+    y += 6;
+
     doc.setFontSize(9);
-    (lines.length ? lines : ['Fără înregistrări în această zi']).forEach(line => {
-      if (y > 280) return;
-      doc.text(line.slice(0, 110), 12, y);
-      y += 4.5;
+    const sorted = [...entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    if (!sorted.length) {
+      doc.setTextColor(160, 160, 160);
+      doc.text('Nicio inregistrare in aceasta zi.', 14, y);
+      doc.setTextColor(40, 40, 40);
+    }
+    sorted.forEach(e => {
+      if (y > pageH - 14) return;
+      let line = '';
+      if (e.type === 'meal') {
+        const qty = e.milkType === 'breast'
+          ? `${e.duration || '?'} min san`
+          : `${e.ml || 0} ml formula`;
+        line = `${formatTime(e.timestamp)}  Hranire - ${qty}`;
+        if (e.notes) line += `  (${e.notes.slice(0, 50)})`;
+      } else if (e.type === 'urine') {
+        line = `${formatTime(e.timestamp)}  Pipi - ${urineColorLabel(e.color)}`;
+      } else if (e.type === 'stool') {
+        line = `${formatTime(e.timestamp)}  Caca - ${stoolColorLabel(e.color)}, ${stoolAspectLabel(e.aspect || 'normal')}`;
+      } else if (e.type === 'temperature') {
+        line = `${formatTime(e.timestamp)}  Temperatura - ${Number(e.valueC).toFixed(1)} C`;
+        if (e.notes) line += `  (${e.notes.slice(0, 40)})`;
+      } else if (e.type === 'medication') {
+        line = `${formatTime(e.timestamp)}  ${e.name || 'Medicament'} - ${e.dose || '?'} ${e.unit || ''}`;
+      }
+      if (line) { doc.text(line.slice(0, 115), 14, y); y += 4.8; }
     });
 
-    setPdfProgress('Capturez graficele pentru paginile următoare...');
+    // ── PAGE 2: Statistics charts ─────────────────────────────
     doc.addPage();
-    doc.setFontSize(14);
-    doc.text('Statistici (ultimele 7 zile)', 12, 14);
+    doc.setFillColor(74, 144, 217);
+    doc.rect(0, 0, pageW, 18, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text('Statistici  -  ultimele 7 zile', 12, 12);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(40, 40, 40);
 
-    const tmp = document.createElement('div');
-    tmp.style.position = 'fixed';
-    tmp.style.left = '-10000px';
-    tmp.style.top = '0';
-    tmp.style.width = '390px';
-    tmp.style.background = '#fff';
-    tmp.style.padding = '12px';
-    tmp.innerHTML = buildStatisticsMarkup();
-    document.body.appendChild(tmp);
+    const imgW   = pageW - 24;
+    const chartH = (260 / 700) * imgW;
+    let cy = 22;
 
-    const charts = Array.from(tmp.querySelectorAll('.chart-card'));
-    let chartY = 22;
-    for (let i = 0; i < charts.length; i++) {
-      const chart = charts[i];
-      setPdfProgress(`Procesez graficul ${i + 1}/${charts.length}...`);
-      const canvas = await window.html2canvas(chart, { backgroundColor: '#ffffff', scale: 2 });
-      const img = canvas.toDataURL('image/png');
-      const w = pageW - 24;
-      const h = (canvas.height * w) / canvas.width;
-      if (chartY + h > 285) {
-        doc.addPage();
-        chartY = 16;
-      }
-      doc.addImage(img, 'PNG', 12, chartY, w, h, undefined, 'FAST');
-      chartY += h + 6;
+    setPdfProgress('Generez graficul scutece...');
+    doc.addImage(buildPdfDiaperChartImg(), 'PNG', 12, cy, imgW, chartH, undefined, 'FAST');
+    cy += chartH + 5;
+
+    setPdfProgress('Generez graficul intervale hraniri...');
+    if (cy + chartH > pageH - 8) { doc.addPage(); cy = 10; }
+    doc.addImage(buildPdfFeedingIntervalsChartImg(), 'PNG', 12, cy, imgW, chartH, undefined, 'FAST');
+    cy += chartH + 5;
+
+    setPdfProgress('Generez graficul ml formula...');
+    if (cy + chartH > pageH - 8) { doc.addPage(); cy = 10; }
+    doc.addImage(buildPdfMealMlChartImg(), 'PNG', 12, cy, imgW, chartH, undefined, 'FAST');
+
+    // ── Growth charts (page 3, only if records exist) ─────────
+    if (getGrowthRecordsForActiveBaby().length > 0) {
+      doc.addPage();
+      doc.setFillColor(74, 144, 217);
+      doc.rect(0, 0, pageW, 18, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.text('Curbe de crestere (WHO)', 12, 12);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(40, 40, 40);
+
+      let gy = 22;
+      setPdfProgress('Generez graficele de crestere...');
+      [
+        { key: 'weightKg', title: 'Greutate in timp (kg)', unit: 'kg', acc: r => Number(r.weightKg) },
+        { key: 'heightCm', title: 'Inaltime in timp (cm)', unit: 'cm', acc: r => Number(r.heightCm) },
+        { key: 'headCm',   title: 'Perimetru cranian (cm)', unit: 'cm', acc: r => Number(r.headCm)   },
+      ].forEach(({ key, title, unit, acc }) => {
+        const img = buildPdfGrowthChartImg(key, title, unit, acc);
+        if (!img) return;
+        if (gy + chartH > pageH - 8) { doc.addPage(); gy = 10; }
+        doc.addImage(img, 'PNG', 12, gy, imgW, chartH, undefined, 'FAST');
+        gy += chartH + 5;
+      });
     }
-    document.body.removeChild(tmp);
-    setPdfProgress('Finalizez fișierul PDF...');
+
+    setPdfProgress('Finalizez fisierul PDF...');
     doc.save(`robby-raport-${new Date(state.reportDate).toISOString().slice(0, 10)}.pdf`);
-    showToast('✓ PDF generat');
+    showToast('PDF generat');
   } catch (err) {
-    showToast('Eroare la export PDF. Reîncearcă.');
+    console.error('PDF export error:', err);
+    showToast('Eroare la export PDF. Reincearca.');
   } finally {
     hidePdfProgress();
   }
