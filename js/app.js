@@ -537,7 +537,7 @@ function refreshVaccineBanner() {
   if (!banner) return;
   const dueSoon = getVaccinesDueSoon(30);
   if (dueSoon.length) {
-    banner.textContent = `💉 ${dueSoon.length} vaccin(uri) scadente în următoarele 30 zile — apasă pentru detalii`;
+    banner.textContent = `💉 ${dueSoon.length} vaccin(uri) scadente în următoarele 30 zile`;
     banner.classList.remove('hidden');
   } else {
     banner.classList.add('hidden');
@@ -2048,16 +2048,18 @@ function evaluateFeedingAlert(cfg) {
 }
 
 function evaluateVitaminDReminder(cfg) {
-  if (!cfg?.enabled || hasVitaminDToday(new Date())) return;
+  if (!cfg?.enabled) return;
+  if (hasVitaminDToday(new Date())) {
+    hideNotificationFallback();
+    return;
+  }
   const target = cfg.time || '09:00';
   const [h, m] = target.split(':').map(Number);
   const now = new Date();
   const due = new Date();
   due.setHours(Number.isFinite(h) ? h : 9, Number.isFinite(m) ? m : 0, 0, 0);
   if (now >= due) {
-    const txt = 'Nu este înregistrată Vitamina D pentru azi.';
-    if (!canUseBrowserNotifications()) showNotificationFallback(txt);
-    notifyOncePerHour('vitamin-d-reminder', '💧 RoBby – Reminder Vitamina D', txt);
+    notifyOncePerHour('vitamin-d-reminder', '💧 RoBby – Reminder Vitamina D', 'Nu este înregistrată Vitamina D pentru azi.');
   }
 }
 
@@ -2067,7 +2069,6 @@ function evaluateVaccineDueReminder(cfg) {
   const dueSoon = getVaccinesDueSoon(Number(cfg.daysAhead || 30));
   if (!dueSoon.length) return;
   const msg = `Ai ${dueSoon.length} vaccin(uri) scadente în următoarele ${Number(cfg.daysAhead || 30)} zile.`;
-  if (!canUseBrowserNotifications()) showNotificationFallback(msg);
   notifyOncePerHour('vaccine-due', '💉 RoBby – Vaccin scadent curând', msg);
 }
 
