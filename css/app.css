@@ -697,13 +697,32 @@ body { overflow: hidden; }
 .btn-full { width: 100%; margin-top: 4px; }
 
 /* ===== REPORT ===== */
-.report-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 14px;
+.report-period-selector {
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+  margin-bottom: 12px;
 }
-.report-header .screen-title { margin-bottom: 0; }
-.date-nav { display: flex; align-items: center; gap: 8px; }
-.date-nav span { font-size: 13px; font-weight: 600; color: var(--text-muted); min-width: 76px; text-align: center; }
+.period-btn {
+  flex: 1;
+  padding: 7px 4px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.period-btn.active { background: var(--primary); color: #fff; }
+.period-btn:not(.active):active { background: var(--primary-soft); color: var(--primary); }
+.date-nav { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 14px; }
+.date-nav span { font-size: 13px; font-weight: 600; color: var(--text-muted); min-width: 80px; text-align: center; }
 .date-nav-btn {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1080,6 +1099,9 @@ body { overflow: hidden; }
 }
 .acc-chevron { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
 .acc-body { padding: 0 10px 10px; }
+.acc-title-block { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+.acc-title-block .acc-title { flex: unset; }
+.acc-day-summary { font-size: 11px; font-weight: 400; color: var(--text-muted); }
 
 /* ===== STATISTICS – MONTHLY BAR CHART ===== */
 .stats-month-nav {

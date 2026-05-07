@@ -27,6 +27,9 @@ const FEEDING_GUIDE = [
 const state = {
   currentScreen: 'home',
   reportDate: new Date(),
+  reportPeriod: 'zi',
+  reportWeekOffset: 0,
+  reportMonthOffset: 0,
   activeBabyId: '',
   editingBabyId: '',
   milkType: 'formula',
@@ -249,6 +252,35 @@ function getEntriesForDate(date) {
            ed.getMonth() === d.getMonth() &&
            ed.getDate() === d.getDate();
   }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+}
+
+function getEntriesForRange(start, end) {
+  const activeId = state.activeBabyId || getActiveBabyId();
+  return loadEntries().filter(e => {
+    if (activeId && e.babyId !== activeId) return false;
+    const t = new Date(e.timestamp);
+    return t >= start && t <= end;
+  }).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+}
+
+function getWeekBounds(offset) {
+  const now = new Date();
+  const day = now.getDay();
+  const mondayDelta = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + mondayDelta + offset * 7);
+  monday.setHours(0, 0, 0, 0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return { monday, sunday };
+}
+
+function getMonthBounds(offset) {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() + offset, 1, 0, 0, 0, 0);
+  const last  = new Date(first.getFullYear(), first.getMonth() + 1, 0, 23, 59, 59, 999);
+  return { first, last };
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────
@@ -964,15 +996,6 @@ function getLastNDates(n) {
   return arr;
 }
 
-function getEntriesForRange(start, end) {
-  const activeId = state.activeBabyId || getActiveBabyId();
-  return loadEntries().filter(e => {
-    if (activeId && e.babyId !== activeId) return false;
-    const t = new Date(e.timestamp).getTime();
-    return t >= start.getTime() && t <= end.getTime();
-  });
-}
-
 function getDiaperStatsLast7Days() {
   return getLastNDates(7).map(date => {
     const entries = getEntriesForDate(date);
@@ -1421,6 +1444,22 @@ function refreshVaccines() {
 
 // ─── REPORT ──────────────────────────────────────────────────
 function refreshReport() {
+  if (state.reportPeriod === 'saptamana') { refreshReportWeek(); return; }
+  if (state.reportPeriod === 'luna')      { refreshReportMonth(); return; }
+  refreshReportDay();
+}
+
+function setReportPeriod(period) {
+  state.reportPeriod = period;
+  document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`period-btn-${period}`)?.classList.add('active');
+  document.getElementById('report-nav-zi').classList.toggle('hidden', period !== 'zi');
+  document.getElementById('report-nav-saptamana').classList.toggle('hidden', period !== 'saptamana');
+  document.getElementById('report-nav-luna').classList.toggle('hidden', period !== 'luna');
+  refreshReport();
+}
+
+function refreshReportDay() {
   const entries = getEntriesForDate(state.reportDate);
   const meals   = entries.filter(e => e.type === 'meal');
   const urines  = entries.filter(e => e.type === 'urine');
@@ -1469,10 +1508,10 @@ function refreshReport() {
     : 'Bebeluș';
 
   const sections = [
-    { id: 'acc-meals',  label: '🍼 Hrăniri',  items: meals  },
-    { id: 'acc-urines', label: '💧 Treabă mică',      items: urines },
-    { id: 'acc-stools', label: '💩 Treabă mare',      items: stools },
-    { id: 'acc-meds',   label: '💊 Medicație', items: meds   },
+    { id: 'acc-meals',  label: '🍼 Hrăniri',      items: meals  },
+    { id: 'acc-urines', label: '💧 Treabă mică',  items: urines },
+    { id: 'acc-stools', label: '💩 Treabă mare',  items: stools },
+    { id: 'acc-meds',   label: '💊 Medicație',    items: meds   },
   ];
 
   document.getElementById('report-entries').innerHTML =
@@ -1492,6 +1531,137 @@ function refreshReport() {
         </div>
       </div>`).join('')
     + `<p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:12px">${babyInfo} · ${dateStr}</p>`;
+}
+
+function refreshReportWeek() {
+  const { monday, sunday } = getWeekBounds(state.reportWeekOffset);
+  const entries = getEntriesForRange(monday, sunday);
+  const meals   = entries.filter(e => e.type === 'meal');
+  const urines  = entries.filter(e => e.type === 'urine');
+  const stools  = entries.filter(e => e.type === 'stool');
+  const meds    = entries.filter(e => e.type === 'medication');
+  const totalMl = meals.filter(m => m.milkType === 'formula').reduce((s, m) => s + (m.ml || 0), 0);
+  const breast  = meals.filter(m => m.milkType === 'breast').length;
+
+  const fmt = { day: 'numeric', month: 'short' };
+  document.getElementById('report-week-display').textContent =
+    `${monday.toLocaleDateString('ro-RO', fmt)} – ${sunday.toLocaleDateString('ro-RO', fmt)}`;
+  const nextBtn = document.getElementById('report-week-next-btn');
+  nextBtn.disabled = state.reportWeekOffset >= 0;
+  nextBtn.style.opacity = state.reportWeekOffset >= 0 ? '0.3' : '1';
+
+  document.getElementById('report-stats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">🍼 Hrăniri</div>
+      <div class="stat-value">${meals.length}</div>
+      <div class="stat-sub">${totalMl > 0 ? totalMl + ' ml' : ''}${breast > 0 ? (totalMl > 0 ? ' + ' : '') + breast + ' alăpt.' : ''}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">💧 Treabă mică</div>
+      <div class="stat-value">${urines.length}</div>
+      <div class="stat-sub">total săptămână</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">💩 Treabă mare</div>
+      <div class="stat-value">${stools.length}</div>
+      <div class="stat-sub">total săptămână</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">💊 Medicație</div>
+      <div class="stat-value">${meds.length}</div>
+      <div class="stat-sub">total săptămână</div>
+    </div>`;
+
+  document.getElementById('report-entries').innerHTML = buildDayGroupedHTML(entries);
+}
+
+function refreshReportMonth() {
+  const { first, last } = getMonthBounds(state.reportMonthOffset);
+  const entries = getEntriesForRange(first, last);
+  const meals   = entries.filter(e => e.type === 'meal');
+  const urines  = entries.filter(e => e.type === 'urine');
+  const stools  = entries.filter(e => e.type === 'stool');
+  const meds    = entries.filter(e => e.type === 'medication');
+  const totalMl = meals.filter(m => m.milkType === 'formula').reduce((s, m) => s + (m.ml || 0), 0);
+  const breast  = meals.filter(m => m.milkType === 'breast').length;
+  const dayCount = new Set(entries.map(e => new Date(e.timestamp).toDateString())).size;
+  const avgMlPerDay = dayCount > 0 ? Math.round(totalMl / dayCount) : 0;
+
+  const monthStr = first.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' });
+  document.getElementById('report-month-display').textContent =
+    monthStr.charAt(0).toUpperCase() + monthStr.slice(1);
+  const nextBtn = document.getElementById('report-month-next-btn');
+  nextBtn.disabled = state.reportMonthOffset >= 0;
+  nextBtn.style.opacity = state.reportMonthOffset >= 0 ? '0.3' : '1';
+
+  document.getElementById('report-stats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">🍼 Hrăniri</div>
+      <div class="stat-value">${meals.length}</div>
+      <div class="stat-sub">${totalMl > 0 ? totalMl + ' ml' : ''}${breast > 0 ? (totalMl > 0 ? ' + ' : '') + breast + ' alăpt.' : ''}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">📊 Medie ml/zi</div>
+      <div class="stat-value">${avgMlPerDay > 0 ? avgMlPerDay : '—'}</div>
+      <div class="stat-sub">ml formulă</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">💧 Treabă mică</div>
+      <div class="stat-value">${urines.length}</div>
+      <div class="stat-sub">total lună</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">💩 Treabă mare</div>
+      <div class="stat-value">${stools.length}</div>
+      <div class="stat-sub">total lună</div>
+    </div>`;
+
+  document.getElementById('report-entries').innerHTML = buildDayGroupedHTML(entries);
+}
+
+function buildDayGroupedHTML(entries) {
+  if (!entries.length) {
+    return '<p class="empty-state" style="padding:20px 0;text-align:center;">Nicio înregistrare în această perioadă.</p>';
+  }
+  const groups = {};
+  entries.forEach(e => {
+    const key = new Date(e.timestamp).toDateString();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(e);
+  });
+  return Object.keys(groups)
+    .sort((a, b) => new Date(b) - new Date(a))
+    .map(key => {
+      const date = new Date(key);
+      const dayEntries = groups[key].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      const dayMeals  = dayEntries.filter(e => e.type === 'meal');
+      const dayUrines = dayEntries.filter(e => e.type === 'urine');
+      const dayStools = dayEntries.filter(e => e.type === 'stool');
+      const dayMl     = dayMeals.filter(m => m.milkType === 'formula').reduce((s, m) => s + (m.ml || 0), 0);
+      const id = `day-grp-${date.getTime()}`;
+      const dayLabel = date.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' });
+      const summary = [
+        dayMeals.length  > 0 ? `${dayMeals.length} hrăniri${dayMl > 0 ? ' · ' + dayMl + ' ml' : ''}` : '',
+        dayUrines.length > 0 ? `${dayUrines.length} 💧` : '',
+        dayStools.length > 0 ? `${dayStools.length} 💩` : '',
+      ].filter(Boolean).join('  ·  ');
+      return `
+        <div class="acc-section">
+          <button class="acc-header" onclick="toggleAccordion('${id}')">
+            <div class="acc-title-block">
+              <span class="acc-title">${dayLabel}</span>
+              ${summary ? `<span class="acc-day-summary">${summary}</span>` : ''}
+            </div>
+            <span class="acc-count">${dayEntries.length}</span>
+            <span class="acc-chevron" id="chevron-${id}">▼</span>
+          </button>
+          <div class="acc-body hidden" id="${id}">
+            <div class="entries-list">
+              ${dayEntries.map(e => entryHTMLFlat(e)).join('')}
+            </div>
+          </div>
+        </div>`;
+    }).join('');
 }
 
 function toggleAccordion(id) {
@@ -1521,6 +1691,20 @@ function changeReportDate(delta) {
   refreshReport();
 }
 
+function changeReportWeek(delta) {
+  const next = state.reportWeekOffset + delta;
+  if (next > 0) return;
+  state.reportWeekOffset = next;
+  refreshReportWeek();
+}
+
+function changeReportMonth(delta) {
+  const next = state.reportMonthOffset + delta;
+  if (next > 0) return;
+  state.reportMonthOffset = next;
+  refreshReportMonth();
+}
+
 // ─── PDF CHART HELPERS (Canvas 2D – no html2canvas needed) ───
 
 function _pdfCanvas(w, h) {
@@ -1532,51 +1716,91 @@ function _pdfCanvas(w, h) {
   return { c, ctx };
 }
 
-function buildPdfDiaperChartImg() {
-  const data = getDiaperStatsLast7Days();
+function buildPdfUrineChartImg() {
+  const data = getLastNDates(7).map(date => ({
+    day: formatShortDay(date),
+    value: getEntriesForDate(date).filter(e => e.type === 'urine').length,
+  }));
   const CW = 700, CH = 260;
   const { c, ctx } = _pdfCanvas(CW, CH);
-  const PL = 10, PR = 10, PT = 30, PB = 34;
+  const PL = 28, PR = 10, PT = 36, PB = 30;
   const chartW = CW - PL - PR;
   const chartH = CH - PT - PB;
 
-  ctx.fillStyle = '#222222';
-  ctx.font = 'bold 16px Arial';
-  ctx.textAlign = 'left';
-  ctx.fillText('Scutece / zi (ultimele 7 zile)', PL, 20);
+  ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
+  ctx.fillText('Treaba mica / zi (ultimele 7 zile)', 10, 24);
 
+  const max = Math.max(1, ...data.map(d => d.value));
   const n = data.length;
   const slotW = chartW / n;
   const barW = Math.max(14, slotW * 0.52);
-  const max = Math.max(1, ...data.map(d => (d.wet || 0) + (d.dirty || 0)));
 
   for (let v = 0; v <= max; v++) {
     const gy = PT + chartH - (v / max) * chartH;
     ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(PL, gy); ctx.lineTo(CW - PR, gy); ctx.stroke();
-    if (v > 0) {
-      ctx.fillStyle = '#aaaaaa'; ctx.font = '11px Arial'; ctx.textAlign = 'right';
-      ctx.fillText(String(v), PL - 2, gy + 4);
-    }
+    ctx.fillStyle = '#aaaaaa'; ctx.font = '11px Arial'; ctx.textAlign = 'right';
+    ctx.fillText(String(v), PL - 4, gy + 4);
   }
 
   data.forEach((d, i) => {
     const bx = PL + i * slotW + (slotW - barW) / 2;
     const baseY = PT + chartH;
-    const dirtyH = ((d.dirty || 0) / max) * chartH;
-    const wetH   = ((d.wet   || 0) / max) * chartH;
-    if (dirtyH > 0) { ctx.fillStyle = '#d7b48b'; ctx.fillRect(bx, baseY - dirtyH, barW, dirtyH); }
-    if (wetH > 0)   { ctx.fillStyle = '#8ec5ff'; ctx.fillRect(bx, baseY - dirtyH - wetH, barW, wetH); }
+    const bh = (d.value / max) * chartH;
+    ctx.fillStyle = '#8ec5ff';
+    if (bh > 0) ctx.fillRect(bx, baseY - bh, barW, bh);
+    if (d.value > 0) {
+      ctx.fillStyle = '#333333'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
+      ctx.fillText(String(d.value), bx + barW / 2, Math.max(baseY - bh - 4, PT + 14));
+    }
     ctx.fillStyle = '#666666'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
     ctx.fillText(d.day, bx + barW / 2, baseY + 18);
   });
 
-  const legY = CH - 6;
-  ctx.fillStyle = '#8ec5ff'; ctx.fillRect(PL, legY - 13, 13, 13);
-  ctx.fillStyle = '#333333'; ctx.font = '11px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('Treabă mică', PL + 16, legY);
-  ctx.fillStyle = '#d7b48b'; ctx.fillRect(PL + 108, legY - 13, 13, 13);
-  ctx.fillStyle = '#333333'; ctx.fillText('Treabă mare', PL + 124, legY);
+  return c.toDataURL('image/png');
+}
+
+function buildPdfStoolChartImg() {
+  const data = getLastNDates(7).map(date => ({
+    day: formatShortDay(date),
+    value: getEntriesForDate(date).filter(e => e.type === 'stool').length,
+  }));
+  const CW = 700, CH = 260;
+  const { c, ctx } = _pdfCanvas(CW, CH);
+  const PL = 28, PR = 10, PT = 36, PB = 30;
+  const chartW = CW - PL - PR;
+  const chartH = CH - PT - PB;
+
+  ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
+  ctx.fillText('Treaba mare / zi (ultimele 7 zile)', 10, 24);
+
+  const max = Math.max(1, ...data.map(d => d.value));
+  const n = data.length;
+  const slotW = chartW / n;
+  const barW = Math.max(14, slotW * 0.52);
+
+  for (let v = 0; v <= max; v++) {
+    const gy = PT + chartH - (v / max) * chartH;
+    ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PL, gy); ctx.lineTo(CW - PR, gy); ctx.stroke();
+    ctx.fillStyle = '#aaaaaa'; ctx.font = '11px Arial'; ctx.textAlign = 'right';
+    ctx.fillText(String(v), PL - 4, gy + 4);
+  }
+
+  data.forEach((d, i) => {
+    const bx = PL + i * slotW + (slotW - barW) / 2;
+    const baseY = PT + chartH;
+    const bh = (d.value / max) * chartH;
+    ctx.fillStyle = '#d7b48b';
+    if (bh > 0) ctx.fillRect(bx, baseY - bh, barW, bh);
+    if (d.value > 0) {
+      ctx.fillStyle = '#333333'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
+      ctx.fillText(String(d.value), bx + barW / 2, Math.max(baseY - bh - 4, PT + 14));
+    }
+    ctx.fillStyle = '#666666'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(d.day, bx + barW / 2, baseY + 18);
+  });
+
   return c.toDataURL('image/png');
 }
 
@@ -1584,12 +1808,12 @@ function buildPdfFeedingIntervalsChartImg() {
   const data = getFeedingIntervalsLast7Days();
   const CW = 700, CH = 260;
   const { c, ctx } = _pdfCanvas(CW, CH);
-  const PL = 38, PR = 12, PT = 30, PB = 34;
+  const PL = 42, PR = 12, PT = 36, PB = 30;
   const chartW = CW - PL - PR;
   const chartH = CH - PT - PB;
 
   ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('Interval mediu intre hraniri / zi (minute)', 10, 20);
+  ctx.fillText('Interval mediu hraniri / zi - minute (ultimele 7 zile)', 10, 24);
 
   const vals = data.map(d => d.avgMin || 0);
   const max = Math.max(60, ...vals);
@@ -1630,8 +1854,6 @@ function buildPdfFeedingIntervalsChartImg() {
     }
   });
 
-  ctx.fillStyle = '#999999'; ctx.font = '10px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('Media intervalelor (minute) dintre hraniri consecutive per zi', PL, CH - 7);
   return c.toDataURL('image/png');
 }
 
@@ -1643,12 +1865,12 @@ function buildPdfMealMlChartImg() {
 
   const CW = 700, CH = 260;
   const { c, ctx } = _pdfCanvas(CW, CH);
-  const PL = 40, PR = 10, PT = 30, PB = 34;
+  const PL = 44, PR = 10, PT = 36, PB = 30;
   const chartW = CW - PL - PR;
   const chartH = CH - PT - PB;
 
   ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('Total ml formula / zi (ultimele 7 zile)', 10, 20);
+  ctx.fillText('Ml formula / zi (ultimele 7 zile)', 10, 24);
 
   const max = Math.max(50, ...data.map(d => d.totalMl));
   const gridMax = Math.ceil(max / 100) * 100;
@@ -1685,14 +1907,14 @@ function buildPdfGrowthChartImg(metricKey, title, unit, valueAccessor) {
   const records = getGrowthRecordsForActiveBaby();
   if (!records.length) return null;
 
-  const CW = 700, CH = 260;
+  const CW = 700, CH = 280;
   const { c, ctx } = _pdfCanvas(CW, CH);
-  const PL = 42, PR = 22, PT = 30, PB = 28;
+  const PL = 44, PR = 54, PT = 36, PB = 28;
   const chartW = CW - PL - PR;
   const chartH = CH - PT - PB;
 
   ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
-  ctx.fillText(title, 10, 20);
+  ctx.fillText(title, 10, 24);
 
   const dataset = WHO_GROWTH[metricKey];
   const maxM = 12;
@@ -1708,24 +1930,29 @@ function buildPdfGrowthChartImg(metricKey, title, unit, valueAccessor) {
     { key: 'p85', color: '#f6c896', label: 'P85' },
     { key: 'p97', color: '#9fd0d8', label: 'P97' },
   ];
-  whoLines.forEach(({ key, color, label }) => {
+
+  const legendX = toX(maxM) + 8;
+  const legendSlot = chartH / 5;
+  whoLines.forEach(({ key, color, label }, idx) => {
     const pts = dataset[key];
     ctx.strokeStyle = color; ctx.lineWidth = 1.5;
     ctx.beginPath();
     pts.forEach((v, m) => m === 0 ? ctx.moveTo(toX(m), toY(v)) : ctx.lineTo(toX(m), toY(v)));
     ctx.stroke();
-    ctx.fillStyle = color; ctx.font = '10px Arial'; ctx.textAlign = 'left';
-    ctx.fillText(label, toX(maxM) + 3, toY(pts[maxM]) + 3);
+    const legY = PT + (idx + 0.5) * legendSlot;
+    ctx.fillStyle = color; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'left';
+    ctx.fillText(label, legendX, legY + 4);
   });
 
   records.forEach(r => {
     const m = ageMonthsForRecord(r.date);
     const v = valueAccessor(r);
     if (m === null || !Number.isFinite(v)) return;
-    ctx.fillStyle = '#e74c3c'; ctx.beginPath();
-    ctx.arc(toX(m), toY(v), 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e74c3c';
+    ctx.beginPath(); ctx.arc(toX(m), toY(v), 8, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.fillStyle = '#222222'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(`${v}${unit}`, toX(m), toY(v) - 8);
+    ctx.fillText(`${v}${unit}`, toX(m), toY(v) - 12);
   });
 
   for (let m = 0; m <= maxM; m++) {
@@ -1739,11 +1966,30 @@ function buildPdfGrowthChartImg(metricKey, title, unit, valueAccessor) {
     ctx.fillText(v.toFixed(1), PL - 4, toY(v) + 3);
   }
   ctx.fillStyle = '#999999'; ctx.font = '10px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('Curbe WHO: P3 / P15 / P50 / P85 / P97  |  Axa X: luna de viata', PL, CH - 7);
+  ctx.fillText('Curbe WHO: P3/P15/P50/P85/P97  |  Axa X: luna de viata', PL, CH - 8);
   return c.toDataURL('image/png');
 }
 
 // ─── PDF EXPORT ──────────────────────────────────────────────
+function pdfEntryLine(e) {
+  let label = '', detail = '';
+  if (e.type === 'meal') {
+    label  = 'Hranire';
+    detail = e.milkType === 'breast' ? `san — ${e.duration || '?'} min` : `formula — ${e.ml || 0} ml`;
+    if (e.notes) detail += `  (${e.notes.slice(0, 40)})`;
+  } else if (e.type === 'urine') {
+    label  = 'Treaba mica';
+    detail = urineColorLabel(e.color);
+  } else if (e.type === 'stool') {
+    label  = 'Treaba mare';
+    detail = `${stoolColorLabel(e.color)}, ${stoolAspectLabel(e.aspect || 'normal')}`;
+  } else if (e.type === 'medication') {
+    label  = e.name || 'Medicament';
+    detail = `${e.dose || '?'} ${e.unit || ''}`.trim();
+  }
+  return { label, detail };
+}
+
 async function exportPrint() {
   const jsPdfNs = window.jspdf;
   if (!jsPdfNs?.jsPDF) {
@@ -1754,14 +2000,41 @@ async function exportPrint() {
     );
     return;
   }
-  const baby    = getActiveBaby();
-  const entries = getEntriesForDate(state.reportDate);
-  const meals   = entries.filter(e => e.type === 'meal');
-  const urines  = entries.filter(e => e.type === 'urine');
-  const stools  = entries.filter(e => e.type === 'stool');
-  const temps   = entries.filter(e => e.type === 'temperature');
-  const meds    = entries.filter(e => e.type === 'medication');
-  const totalMl = meals.filter(m => m.milkType === 'formula').reduce((s, m) => s + (m.ml || 0), 0);
+
+  const baby   = getActiveBaby();
+  const period = state.reportPeriod;
+  const genDate = new Date().toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+  let entries, titleText, periodLabel, pdfFileName;
+  if (period === 'saptamana') {
+    const { monday, sunday } = getWeekBounds(state.reportWeekOffset);
+    entries     = getEntriesForRange(monday, sunday);
+    titleText   = 'RoBby  -  Raport saptamanal';
+    const fmt   = { day: 'numeric', month: 'short' };
+    periodLabel = `${monday.toLocaleDateString('ro-RO', fmt)} - ${sunday.toLocaleDateString('ro-RO', fmt)}`;
+    pdfFileName = `robby-saptamana-${monday.toISOString().slice(0, 10)}.pdf`;
+  } else if (period === 'luna') {
+    const { first, last } = getMonthBounds(state.reportMonthOffset);
+    entries     = getEntriesForRange(first, last);
+    titleText   = 'RoBby  -  Raport lunar';
+    const ml    = first.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' });
+    periodLabel = ml.charAt(0).toUpperCase() + ml.slice(1);
+    pdfFileName = `robby-luna-${first.toISOString().slice(0, 7)}.pdf`;
+  } else {
+    entries     = getEntriesForDate(state.reportDate);
+    titleText   = 'RoBby  -  Raport zilnic';
+    const rd    = new Date(state.reportDate);
+    periodLabel = `${String(rd.getDate()).padStart(2,'0')}/${String(rd.getMonth()+1).padStart(2,'0')}/${rd.getFullYear()}`;
+    pdfFileName = `robby-raport-${new Date(state.reportDate).toISOString().slice(0, 10)}.pdf`;
+  }
+
+  const meals        = entries.filter(e => e.type === 'meal');
+  const urines       = entries.filter(e => e.type === 'urine');
+  const stools       = entries.filter(e => e.type === 'stool');
+  const meds         = entries.filter(e => e.type === 'medication');
+  const totalMl      = meals.filter(m => m.milkType === 'formula').reduce((s, m) => s + (m.ml || 0), 0);
+  const breastMeals  = meals.filter(m => m.milkType === 'breast');
+  const formulaMeals = meals.filter(m => m.milkType === 'formula');
 
   const { jsPDF } = jsPdfNs;
   setPdfProgress('Generez pagina 1...');
@@ -1770,137 +2043,222 @@ async function exportPrint() {
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
 
-    // ── PAGE 1: Daily report ──────────────────────────────────
-    doc.setFillColor(74, 144, 217);
-    doc.rect(0, 0, pageW, 18, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.text('RoBby  -  Raport zilnic', 12, 12);
-    doc.setFont('helvetica', 'normal');
+    const addPageBanner = (text) => {
+      doc.setFillColor(74, 144, 217);
+      doc.rect(0, 0, pageW, 22, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.text(text, 12, 15);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(40, 40, 40);
+    };
 
-    let y = 24;
-    doc.setTextColor(40, 40, 40);
-    doc.setFontSize(10);
-    doc.text(`Bebelus: ${baby?.name || '—'}`, 12, y);
-    doc.text(`Data: ${formatDateShort(state.reportDate)}`, pageW / 2, y);
-    y += 5;
+    const renderEntryLine = (e, y) => {
+      const { label, detail } = pdfEntryLine(e);
+      if (!label) return y;
+      doc.setFontSize(9.5);
+      const timeStr = formatTime(e.timestamp);
+      doc.setTextColor(130, 130, 130);
+      doc.text(timeStr, 14, y);
+      const timeW = doc.getTextWidth(timeStr);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(40, 40, 40);
+      doc.text(label, 14 + timeW + 4, y);
+      const labelW = doc.getTextWidth(label);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(80, 80, 80);
+      doc.text(detail.slice(0, 82), 14 + timeW + 4 + labelW + 3, y);
+      doc.setTextColor(40, 40, 40);
+      return y + 5.5;
+    };
+
+    // ── PAGE 1: Summary ───────────────────────────────────────
+    addPageBanner(titleText);
+    let y = 32;
+
+    doc.setFontSize(15);
+    doc.setFont('helvetica', 'bold');
+    doc.text(baby?.name || '—', 12, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(11);
+    doc.text(periodLabel, pageW - 12, y, { align: 'right' });
+    y += 7;
+
     if (baby?.birthDate) {
-      const ageDays = Math.floor((new Date(state.reportDate) - new Date(baby.birthDate)) / 86400000);
+      const ageDays = Math.floor((Date.now() - new Date(baby.birthDate)) / 86400000);
       const ageM    = Math.floor(ageDays / 30.4375);
       const ageW    = Math.floor(ageDays / 7);
-      const ageStr  = ageM > 0
-        ? `${ageM} lun${ageM === 1 ? 'a' : 'i'} (${ageW} sapt.)`
-        : `${ageW} saptamani`;
+      const ageStr  = ageM > 0 ? `${ageM} lun${ageM === 1 ? 'a' : 'i'} (${ageW} sapt.)` : `${ageW} saptamani`;
+      doc.setFontSize(10);
+      doc.setTextColor(110, 110, 110);
       doc.text(`Varsta: ${ageStr}`, 12, y);
-      y += 5;
+      doc.setTextColor(40, 40, 40);
+      y += 7;
     }
 
     y += 2;
+    const isMonth  = period === 'luna';
+    const statsH   = isMonth ? 48 : 38;
     doc.setFillColor(240, 246, 253);
-    doc.rect(8, y, pageW - 16, 20, 'F');
-    doc.setFontSize(9.5);
-    doc.text(`Hraniri: ${meals.length}  (${totalMl} ml formula)`, 12, y + 6);
-    doc.text(`Tr. mică: ${urines.length}`, 90, y + 6);
-    doc.text(`Tr. mare: ${stools.length}`, 130, y + 6);
-    doc.text(`Temperaturi: ${temps.length}`, 12, y + 15);
-    doc.text(`Medicatii: ${meds.length}`, 90, y + 15);
-    y += 26;
-
+    doc.setDrawColor(200, 220, 245);
+    doc.roundedRect(8, y, pageW - 16, statsH, 2, 2, 'FD');
+    const bx1 = 16, bx2 = pageW / 2 + 4;
     doc.setFontSize(10.5);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Jurnal zilnic', 12, y);
-    doc.setFont('helvetica', 'normal');
-    doc.setDrawColor(220, 220, 220);
-    doc.line(12, y + 1.5, pageW - 12, y + 1.5);
-    y += 6;
 
-    doc.setFontSize(9);
-    const sorted = [...entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    if (!sorted.length) {
-      doc.setTextColor(160, 160, 160);
-      doc.text('Nicio inregistrare in aceasta zi.', 14, y);
+    doc.setFont('helvetica', 'bold'); doc.text('Hraniri:', bx1, y + 9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${meals.length}  (${totalMl} ml formula,  san: ${breastMeals.length})`, bx1 + 22, y + 9);
+
+    doc.setFont('helvetica', 'bold'); doc.text('Treaba mica:', bx2, y + 9);
+    doc.setFont('helvetica', 'normal'); doc.text(String(urines.length), bx2 + 34, y + 9);
+
+    doc.setFont('helvetica', 'bold'); doc.text('Treaba mare:', bx1, y + 21);
+    doc.setFont('helvetica', 'normal'); doc.text(String(stools.length), bx1 + 34, y + 21);
+
+    doc.setFont('helvetica', 'bold'); doc.text('Medicatii:', bx2, y + 21);
+    doc.setFont('helvetica', 'normal'); doc.text(String(meds.length), bx2 + 29, y + 21);
+
+    if (isMonth) {
+      const dayCount = new Set(entries.map(e => new Date(e.timestamp).toDateString())).size;
+      const avgMl    = dayCount > 0 ? Math.round(totalMl / dayCount) : 0;
+      doc.setFont('helvetica', 'bold'); doc.text('Medie ml/zi:', bx1, y + 33);
+      doc.setFont('helvetica', 'normal'); doc.text(avgMl > 0 ? `${avgMl} ml` : '—', bx1 + 32, y + 33);
+      doc.setFont('helvetica', 'bold'); doc.text('Zile cu date:', bx2, y + 33);
+      doc.setFont('helvetica', 'normal'); doc.text(String(dayCount), bx2 + 34, y + 33);
+    } else {
+      doc.setFontSize(8.5);
+      doc.setTextColor(130, 130, 130);
+      doc.text(`Formula: ${formulaMeals.length}  |  Total ml: ${totalMl}`, bx1, y + 32);
       doc.setTextColor(40, 40, 40);
     }
-    sorted.forEach(e => {
-      if (y > pageH - 14) return;
-      let line = '';
-      if (e.type === 'meal') {
-        const qty = e.milkType === 'breast'
-          ? `${e.duration || '?'} min san`
-          : `${e.ml || 0} ml formula`;
-        line = `${formatTime(e.timestamp)}  Hranire - ${qty}`;
-        if (e.notes) line += `  (${e.notes.slice(0, 50)})`;
-      } else if (e.type === 'urine') {
-        line = `${formatTime(e.timestamp)}  Treabă mică - ${urineColorLabel(e.color)}`;
-      } else if (e.type === 'stool') {
-        line = `${formatTime(e.timestamp)}  Treabă mare - ${stoolColorLabel(e.color)}, ${stoolAspectLabel(e.aspect || 'normal')}`;
-      } else if (e.type === 'temperature') {
-        line = `${formatTime(e.timestamp)}  Temperatura - ${Number(e.valueC).toFixed(1)} C`;
-        if (e.notes) line += `  (${e.notes.slice(0, 40)})`;
-      } else if (e.type === 'medication') {
-        line = `${formatTime(e.timestamp)}  ${e.name || 'Medicament'} - ${e.dose || '?'} ${e.unit || ''}`;
-      }
-      if (line) { doc.text(line.slice(0, 115), 14, y); y += 4.8; }
-    });
+    y += statsH + 8;
 
-    // ── PAGE 2: Statistics charts ─────────────────────────────
-    doc.addPage();
-    doc.setFillColor(74, 144, 217);
-    doc.rect(0, 0, pageW, 18, 'F');
-    doc.setTextColor(255, 255, 255);
+    // Journal header
+    doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.text('Statistici  -  ultimele 7 zile', 12, 12);
+    const journalTitle = period === 'zi' ? 'Jurnal zilnic' : 'Jurnal';
+    doc.text(journalTitle, 12, y);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(40, 40, 40);
+    doc.setDrawColor(180, 210, 240);
+    doc.setLineWidth(0.4);
+    doc.line(12, y + 2, pageW - 12, y + 2);
+    y += 8;
 
-    const imgW   = pageW - 24;
-    const chartH = (260 / 700) * imgW;
-    let cy = 22;
+    const sorted = [...entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-    setPdfProgress('Generez graficul scutece...');
-    doc.addImage(buildPdfDiaperChartImg(), 'PNG', 12, cy, imgW, chartH, undefined, 'FAST');
-    cy += chartH + 5;
-
-    setPdfProgress('Generez graficul intervale hraniri...');
-    if (cy + chartH > pageH - 8) { doc.addPage(); cy = 10; }
-    doc.addImage(buildPdfFeedingIntervalsChartImg(), 'PNG', 12, cy, imgW, chartH, undefined, 'FAST');
-    cy += chartH + 5;
-
-    setPdfProgress('Generez graficul ml formula...');
-    if (cy + chartH > pageH - 8) { doc.addPage(); cy = 10; }
-    doc.addImage(buildPdfMealMlChartImg(), 'PNG', 12, cy, imgW, chartH, undefined, 'FAST');
-
-    // ── Growth charts (page 3, only if records exist) ─────────
-    if (getGrowthRecordsForActiveBaby().length > 0) {
-      doc.addPage();
-      doc.setFillColor(74, 144, 217);
-      doc.rect(0, 0, pageW, 18, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13);
-      doc.text('Curbe de crestere (WHO)', 12, 12);
-      doc.setFont('helvetica', 'normal');
+    if (!sorted.length) {
+      doc.setFontSize(9.5);
+      doc.setTextColor(160, 160, 160);
+      doc.text('Nicio inregistrare in aceasta perioada.', 14, y);
       doc.setTextColor(40, 40, 40);
+    } else if (period === 'zi') {
+      sorted.forEach(e => {
+        if (y > pageH - 18) return;
+        y = renderEntryLine(e, y);
+      });
+    } else {
+      // Grouped by day for week / month
+      const groups = {};
+      sorted.forEach(e => {
+        const key = new Date(e.timestamp).toDateString();
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(e);
+      });
+      const sortedKeys = Object.keys(groups).sort((a, b) => new Date(a) - new Date(b));
 
-      let gy = 22;
-      setPdfProgress('Generez graficele de crestere...');
-      [
-        { key: 'weightKg', title: 'Greutate in timp (kg)', unit: 'kg', acc: r => Number(r.weightKg) },
-        { key: 'heightCm', title: 'Inaltime in timp (cm)', unit: 'cm', acc: r => Number(r.heightCm) },
-        { key: 'headCm',   title: 'Perimetru cranian (cm)', unit: 'cm', acc: r => Number(r.headCm)   },
-      ].forEach(({ key, title, unit, acc }) => {
-        const img = buildPdfGrowthChartImg(key, title, unit, acc);
-        if (!img) return;
-        if (gy + chartH > pageH - 8) { doc.addPage(); gy = 10; }
-        doc.addImage(img, 'PNG', 12, gy, imgW, chartH, undefined, 'FAST');
-        gy += chartH + 5;
+      sortedKeys.forEach(key => {
+        const date      = new Date(key);
+        const dayEntries = groups[key];
+        const dayLabel  = date.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' });
+
+        if (y > pageH - 28) { doc.addPage(); addPageBanner(titleText); y = 28; }
+
+        doc.setFillColor(232, 242, 255);
+        doc.rect(8, y - 4, pageW - 16, 8, 'F');
+        doc.setFontSize(9.5);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(50, 100, 180);
+        doc.text(dayLabel, 12, y + 1);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(40, 40, 40);
+        y += 7;
+
+        dayEntries.forEach(e => {
+          if (y > pageH - 18) { doc.addPage(); addPageBanner(titleText); y = 28; }
+          y = renderEntryLine(e, y);
+        });
+        y += 4;
       });
     }
 
+    // ── Statistics charts page ────────────────────────────────
+    doc.addPage();
+    addPageBanner('Statistici  -  ultimele 7 zile');
+
+    const imgW  = pageW - 24;
+    const cH260 = (260 / 700) * imgW;
+    const cH280 = (280 / 700) * imgW;
+    let cy = 26;
+
+    setPdfProgress('Generez graficul treaba mica...');
+    doc.addImage(buildPdfUrineChartImg(), 'PNG', 12, cy, imgW, cH260, undefined, 'FAST');
+    cy += cH260 + 8;
+
+    setPdfProgress('Generez graficul treaba mare...');
+    if (cy + cH260 > pageH - 18) { doc.addPage(); cy = 14; }
+    doc.addImage(buildPdfStoolChartImg(), 'PNG', 12, cy, imgW, cH260, undefined, 'FAST');
+    cy += cH260 + 8;
+
+    setPdfProgress('Generez graficul intervale hraniri...');
+    if (cy + cH260 > pageH - 18) { doc.addPage(); cy = 14; }
+    doc.addImage(buildPdfFeedingIntervalsChartImg(), 'PNG', 12, cy, imgW, cH260, undefined, 'FAST');
+    cy += cH260 + 8;
+
+    setPdfProgress('Generez graficul ml formula...');
+    if (cy + cH260 > pageH - 18) { doc.addPage(); cy = 14; }
+    doc.addImage(buildPdfMealMlChartImg(), 'PNG', 12, cy, imgW, cH260, undefined, 'FAST');
+
+    // ── Growth charts ─────────────────────────────────────────
+    const growthRecords = getGrowthRecordsForActiveBaby();
+    if (growthRecords.length > 0) {
+      doc.addPage();
+      addPageBanner('Curbe de crestere (WHO)');
+      const hasHeight = growthRecords.some(r => Number.isFinite(Number(r.heightCm)));
+      const hasHead   = growthRecords.some(r => Number.isFinite(Number(r.headCm)));
+      let gy = 26;
+      setPdfProgress('Generez graficele de crestere...');
+      const growthDefs = [
+        { key: 'weightKg', title: 'Greutate (kg)', unit: 'kg', acc: r => Number(r.weightKg), show: true },
+        { key: 'heightCm', title: 'Inaltime (cm)', unit: 'cm', acc: r => Number(r.heightCm), show: hasHeight },
+        { key: 'headCm',   title: 'Perimetru cranian (cm)', unit: 'cm', acc: r => Number(r.headCm), show: hasHead },
+      ];
+      for (const { key, title, unit, acc, show } of growthDefs) {
+        if (!show) continue;
+        const img = buildPdfGrowthChartImg(key, title, unit, acc);
+        if (!img) continue;
+        if (gy + cH280 > pageH - 18) { doc.addPage(); gy = 14; }
+        doc.addImage(img, 'PNG', 12, gy, imgW, cH280, undefined, 'FAST');
+        gy += cH280 + 8;
+      }
+    }
+
+    // ── Footers on all pages ───────────────────────────────────
+    const totalPages = doc.getNumberOfPages();
+    for (let pg = 1; pg <= totalPages; pg++) {
+      doc.setPage(pg);
+      doc.setLineWidth(0.3);
+      doc.setDrawColor(200, 200, 200);
+      doc.line(12, pageH - 11, pageW - 12, pageH - 11);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(160, 160, 160);
+      doc.text(`Pagina ${pg} din ${totalPages}`, 12, pageH - 5);
+      doc.text(`RoBby  |  generat la ${genDate}`, pageW - 12, pageH - 5, { align: 'right' });
+    }
+
     setPdfProgress('Finalizez fisierul PDF...');
-    doc.save(`robby-raport-${new Date(state.reportDate).toISOString().slice(0, 10)}.pdf`);
+    doc.save(pdfFileName);
     showToast('PDF generat');
   } catch (err) {
     console.error('PDF export error:', err);

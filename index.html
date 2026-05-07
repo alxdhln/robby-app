@@ -339,13 +339,26 @@
     <!-- ══════════════ RAPORT ══════════════ -->
     <div id="screen-report" class="screen">
       <div class="screen-content">
-        <div class="report-header">
-          <h2 class="screen-title">📊 Raport</h2>
-          <div class="date-nav">
-            <button class="date-nav-btn" onclick="changeReportDate(-1)">◀</button>
-            <span id="report-date-display"></span>
-            <button class="date-nav-btn" onclick="changeReportDate(1)" id="report-next-btn">▶</button>
-          </div>
+        <h2 class="screen-title">📊 Raport</h2>
+        <div class="report-period-selector">
+          <button class="period-btn active" id="period-btn-zi" onclick="setReportPeriod('zi')">Zi</button>
+          <button class="period-btn" id="period-btn-saptamana" onclick="setReportPeriod('saptamana')">Săptămână</button>
+          <button class="period-btn" id="period-btn-luna" onclick="setReportPeriod('luna')">Lună</button>
+        </div>
+        <div class="date-nav" id="report-nav-zi">
+          <button class="date-nav-btn" onclick="changeReportDate(-1)">◀</button>
+          <span id="report-date-display"></span>
+          <button class="date-nav-btn" onclick="changeReportDate(1)" id="report-next-btn">▶</button>
+        </div>
+        <div class="date-nav hidden" id="report-nav-saptamana">
+          <button class="date-nav-btn" onclick="changeReportWeek(-1)">◀</button>
+          <span id="report-week-display"></span>
+          <button class="date-nav-btn" onclick="changeReportWeek(1)" id="report-week-next-btn">▶</button>
+        </div>
+        <div class="date-nav hidden" id="report-nav-luna">
+          <button class="date-nav-btn" onclick="changeReportMonth(-1)">◀</button>
+          <span id="report-month-display"></span>
+          <button class="date-nav-btn" onclick="changeReportMonth(1)" id="report-month-next-btn">▶</button>
         </div>
         <div id="report-stats" class="report-stats"></div>
         <div id="report-entries"></div>
