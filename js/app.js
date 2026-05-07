@@ -11,6 +11,30 @@ const FORMULA_BRANDS = [
   'Bebivita 1','Novalac 1','Milupa Milumil 1',
 ];
 
+// ─── FORMULA BRAND GUIDE ─────────────────────────────────────
+const FORMULA_BRAND_GUIDE = {
+  'NAN Supreme Pro 1':     [{ maxDays: 999, ml: 120, scoops: 4, label: '0–6 luni' }],
+  'NAN Supreme Pro 2':     [{ maxDays: 999, ml: 150, scoops: 5, label: '6–12 luni' }],
+  'NAN Optipro 1':         [{ maxDays: 999, ml: 120, scoops: 4, label: '0–6 luni' }],
+  'NAN Optipro 2':         [{ maxDays: 999, ml: 150, scoops: 5, label: '6–12 luni' }],
+  'Aptamil 1':             [{ maxDays: 60, ml: 90, scoops: 3, label: '0–2 luni' }, { maxDays: 999, ml: 120, scoops: 4, label: '2–6 luni' }],
+  'Aptamil 2':             [{ maxDays: 999, ml: 150, scoops: 5, label: '6–12 luni' }],
+  'Aptamil Pronutra':      [{ maxDays: 999, ml: 90,  scoops: 3, label: '0–6 luni' }],
+  'Nutrilon 1':            [{ maxDays: 999, ml: 90,  scoops: 3, label: '0–6 luni' }],
+  'Nutrilon 2':            [{ maxDays: 999, ml: 150, scoops: 5, label: '6–12 luni' }],
+  'Similac Advance':       [{ maxDays: 999, ml: 120, scoops: 4, label: '0–12 luni' }],
+  'Similac Total Comfort': [{ maxDays: 999, ml: 120, scoops: 4, label: '0–12 luni' }],
+  'Enfamil Premium':       [{ maxDays: 999, ml: 90,  scoops: 3, label: '0–6 luni' }],
+  'Enfamil Gentlease':     [{ maxDays: 999, ml: 120, scoops: 4, label: '0–12 luni' }],
+  'HiPP BIO 1':            [{ maxDays: 999, ml: 90,  scoops: 3, label: '0–6 luni' }],
+  'HiPP Combiotic 2':      [{ maxDays: 999, ml: 150, scoops: 5, label: '6–12 luni' }],
+  'Humana 1':              [{ maxDays: 999, ml: 90,  scoops: 3, label: '0–6 luni' }],
+  'Humana 2':              [{ maxDays: 999, ml: 150, scoops: 5, label: '6–12 luni' }],
+  'Bebivita 1':            [{ maxDays: 999, ml: 90,  scoops: 3, label: '0–6 luni' }],
+  'Novalac 1':             [{ maxDays: 999, ml: 90,  scoops: 3, label: '0–6 luni' }],
+  'Milupa Milumil 1':      [{ maxDays: 999, ml: 90,  scoops: 3, label: '0–6 luni' }],
+};
+
 // ─── FEEDING GUIDE ────────────────────────────────────────────
 // NAN Supreme Pro 1 — confirmed via label data.
 // Key: 32 days old (1 lună + 2 zile) → 5h interval → 06:42+5h = 11:42
@@ -47,6 +71,10 @@ const state = {
 const DEFAULT_SETTINGS = {
   babyName: '', birthDate: '', gender: 'boy',
   formula: 'NAN Supreme Pro 1', theme: 'blue',
+  darkMode: false,
+  pdfIncludeCharts: true,
+  pdfIncludeGrowth: true,
+  defaultReportPeriod: 'zi',
   remindersEnabled: false, customInterval: '', familyCode: '',
   notifications: {
     feedingAlert: { enabled: false, limitHours: 3 },
@@ -757,19 +785,87 @@ function deleteGrowthRecord(id) {
 }
 
 // ─── MEAL FORM ───────────────────────────────────────────────
+function getFormulaBrandRec(brand) {
+  const days = getBabyAgeInDays();
+  const guide = FORMULA_BRAND_GUIDE[brand];
+  if (!guide) return null;
+  return days !== null
+    ? guide.find(g => days <= g.maxDays) || guide[guide.length - 1]
+    : guide[0];
+}
+
+function updateFormulaRecommendation() {
+  const el = document.getElementById('meal-formula');
+  const suggestedEl = document.getElementById('suggested-amount');
+  if (!suggestedEl) return;
+  const brand = el?.value?.trim();
+  const rec = brand ? getFormulaBrandRec(brand) : null;
+  if (rec) {
+    suggestedEl.textContent = `✓ Recomandat: ${rec.ml} ml · ${rec.scoops} linguri · ${brand} · ${rec.label}`;
+    const mlEl = document.getElementById('meal-ml');
+    if (mlEl && mlEl !== document.activeElement) mlEl.value = rec.ml;
+  } else {
+    const guide = getFeedingGuide();
+    const displayBrand = brand || settings.formula || 'NAN Supreme Pro 1';
+    suggestedEl.textContent = `✓ Recomandat: ${guide.ml} ml · ${guide.scoops} linguri · ${displayBrand} · ${guide.label}`;
+  }
+  updateFormulaClearBtn();
+}
+
+function onFormulaBrandClick() {
+  const el = document.getElementById('meal-formula');
+  if (!el) return;
+  if (el.value && !el.dataset.savedBrand) {
+    el.dataset.savedBrand = el.value;
+    el.value = '';
+  }
+}
+
+function onFormulaBrandBlur() {
+  const el = document.getElementById('meal-formula');
+  if (!el) return;
+  if (!el.value && el.dataset.savedBrand) {
+    el.value = el.dataset.savedBrand;
+  }
+  el.dataset.savedBrand = '';
+  updateFormulaRecommendation();
+}
+
+function onFormulaBrandInput() {
+  const el = document.getElementById('meal-formula');
+  if (el) el.dataset.savedBrand = '';
+  updateFormulaRecommendation();
+}
+
+function clearFormulaBrand() {
+  const el = document.getElementById('meal-formula');
+  if (!el) return;
+  el.dataset.savedBrand = '';
+  el.value = '';
+  el.focus();
+  updateFormulaRecommendation();
+}
+
+function updateFormulaClearBtn() {
+  const el  = document.getElementById('meal-formula');
+  const btn = document.getElementById('formula-clear-btn');
+  if (!btn) return;
+  btn.style.display = (el?.value || '') ? 'flex' : 'none';
+}
+
 function initMealForm() {
   setFormNow('meal');
   document.getElementById('meal-notes').value = '';
   selectMilkType('formula');
-  const guide   = getFeedingGuide();
   const formula = settings.formula || 'NAN Supreme Pro 1';
-  document.getElementById('meal-ml').value = guide.ml;
-  document.getElementById('suggested-amount').textContent =
-    `✓ Recomandat: ${guide.ml} ml · ${guide.scoops} linguri (${guide.label}) · ${formula}`;
   const dl = document.getElementById('formula-brands-list');
   if (dl) dl.innerHTML = FORMULA_BRANDS.map(b => `<option value="${b}">`).join('');
   const formulaEl = document.getElementById('meal-formula');
-  if (formulaEl) formulaEl.value = formula;
+  if (formulaEl) {
+    formulaEl.value = formula;
+    formulaEl.dataset.savedBrand = '';
+  }
+  updateFormulaRecommendation();
 }
 
 function selectMilkType(type) {
@@ -2039,126 +2135,174 @@ async function exportPrint() {
   const { jsPDF } = jsPdfNs;
   setPdfProgress('Generez pagina 1...');
   try {
-    const doc   = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
+    const doc    = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const pageW  = doc.internal.pageSize.getWidth();
+    const pageH  = doc.internal.pageSize.getHeight();
+    const ML     = 20; // left margin
+    const MR     = 20; // right margin
+    const CW     = pageW - ML - MR; // content width
+    const FOOTER = 14; // footer area height
 
-    const addPageBanner = (text) => {
-      doc.setFillColor(74, 144, 217);
-      doc.rect(0, 0, pageW, 22, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(16);
-      doc.text(text, 12, 15);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(40, 40, 40);
+    // Type accent colors [R,G,B]
+    const TYPE_COLOR = {
+      meal:       [74,  144, 217],
+      urine:      [232, 156,  32],
+      stool:      [139,  98,  38],
+      medication: [46,  158, 107],
     };
 
-    const renderEntryLine = (e, y) => {
+    const addPageHeader = (titleRight) => {
+      // Left: RoBby logo text
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.setTextColor(74, 144, 217);
+      doc.text('RoBby', ML, 14);
+      // Right: title text
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(100, 100, 100);
+      doc.text(titleRight, pageW - MR, 14, { align: 'right' });
+      // Blue divider
+      doc.setDrawColor(74, 144, 217);
+      doc.setLineWidth(0.6);
+      doc.line(ML, 18, pageW - MR, 18);
+      doc.setTextColor(30, 30, 30);
+      doc.setLineWidth(0.3);
+    };
+
+    // Entry row with left accent bar
+    const renderEntryRow = (e, y, rowIdx) => {
       const { label, detail } = pdfEntryLine(e);
       if (!label) return y;
-      doc.setFontSize(9.5);
+      const rowH = 7.5;
+      // Alternating row background
+      if (rowIdx % 2 === 0) {
+        doc.setFillColor(248, 250, 253);
+        doc.rect(ML, y - 5.5, CW, rowH, 'F');
+      }
+      // Left accent bar
+      const [r, g, b] = TYPE_COLOR[e.type] || [150, 150, 150];
+      doc.setFillColor(r, g, b);
+      doc.rect(ML, y - 5.5, 2.5, rowH, 'F');
+      // Time
+      doc.setFontSize(8.5);
+      doc.setTextColor(140, 140, 140);
       const timeStr = formatTime(e.timestamp);
-      doc.setTextColor(130, 130, 130);
-      doc.text(timeStr, 14, y);
+      doc.text(timeStr, ML + 5, y - 0.5);
       const timeW = doc.getTextWidth(timeStr);
+      // Label
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(40, 40, 40);
-      doc.text(label, 14 + timeW + 4, y);
+      doc.setTextColor(30, 30, 30);
+      doc.text(label, ML + 5 + timeW + 3, y - 0.5);
       const labelW = doc.getTextWidth(label);
+      // Detail
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(80, 80, 80);
-      doc.text(detail.slice(0, 82), 14 + timeW + 4 + labelW + 3, y);
-      doc.setTextColor(40, 40, 40);
-      return y + 5.5;
+      const maxDetailW = CW - (5 + timeW + 3 + labelW + 3);
+      const detailStr  = detail.length > 90 ? detail.slice(0, 90) + '...' : detail;
+      doc.text(detailStr, ML + 5 + timeW + 3 + labelW + 3, y - 0.5, { maxWidth: Math.max(maxDetailW, 10) });
+      doc.setTextColor(30, 30, 30);
+      return y + rowH;
     };
 
-    // ── PAGE 1: Summary ───────────────────────────────────────
-    addPageBanner(titleText);
-    let y = 32;
+    // ── PAGE 1: Header + Summary grid + Journal ───────────────
+    const babyNameLabel = baby?.name || '—';
+    addPageHeader(`${babyNameLabel}  |  ${periodLabel}`);
+    let y = 26;
 
-    doc.setFontSize(15);
-    doc.setFont('helvetica', 'bold');
-    doc.text(baby?.name || '—', 12, y);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11);
-    doc.text(periodLabel, pageW - 12, y, { align: 'right' });
-    y += 7;
-
+    // Baby age sub-line
     if (baby?.birthDate) {
       const ageDays = Math.floor((Date.now() - new Date(baby.birthDate)) / 86400000);
       const ageM    = Math.floor(ageDays / 30.4375);
       const ageW    = Math.floor(ageDays / 7);
       const ageStr  = ageM > 0 ? `${ageM} lun${ageM === 1 ? 'a' : 'i'} (${ageW} sapt.)` : `${ageW} saptamani`;
-      doc.setFontSize(10);
+      doc.setFontSize(9);
       doc.setTextColor(110, 110, 110);
-      doc.text(`Varsta: ${ageStr}`, 12, y);
-      doc.setTextColor(40, 40, 40);
-      y += 7;
+      doc.text(`Varsta: ${ageStr}  ·  Generat: ${genDate}`, ML, y);
+      doc.setTextColor(30, 30, 30);
+      y += 6;
     }
 
-    y += 2;
-    const isMonth  = period === 'luna';
-    const statsH   = isMonth ? 48 : 38;
-    doc.setFillColor(240, 246, 253);
-    doc.setDrawColor(200, 220, 245);
-    doc.roundedRect(8, y, pageW - 16, statsH, 2, 2, 'FD');
-    const bx1 = 16, bx2 = pageW / 2 + 4;
-    doc.setFontSize(10.5);
+    // 2x3 summary grid
+    const isMonth = period === 'luna';
+    const dayCount = isMonth ? new Set(entries.map(e => new Date(e.timestamp).toDateString())).size : 0;
+    const avgMl    = isMonth && dayCount > 0 ? Math.round(totalMl / dayCount) : 0;
 
-    doc.setFont('helvetica', 'bold'); doc.text('Hraniri:', bx1, y + 9);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`${meals.length}  (${totalMl} ml formula,  san: ${breastMeals.length})`, bx1 + 22, y + 9);
+    const gridItems = [
+      { icon: 'Hraniri',     val: String(meals.length),    sub: `${formulaMeals.length} formula` },
+      { icon: 'Total ml',    val: `${totalMl} ml`,          sub: `san: ${breastMeals.length}` },
+      { icon: 'Treaba mica', val: String(urines.length),    sub: '' },
+      { icon: 'Treaba mare', val: String(stools.length),    sub: '' },
+      { icon: 'Medicatii',   val: String(meds.length),      sub: '' },
+      isMonth
+        ? { icon: 'Medie ml/zi', val: avgMl > 0 ? `${avgMl} ml` : '—', sub: `${dayCount} zile` }
+        : { icon: 'Interval',    val: `${getFeedingGuide().intervalHours}h`, sub: 'recomandat' },
+    ];
 
-    doc.setFont('helvetica', 'bold'); doc.text('Treaba mica:', bx2, y + 9);
-    doc.setFont('helvetica', 'normal'); doc.text(String(urines.length), bx2 + 34, y + 9);
+    const cols  = 3;
+    const gW    = (CW - (cols - 1) * 4) / cols;
+    const gH    = 18;
+    const gTop  = y + 2;
 
-    doc.setFont('helvetica', 'bold'); doc.text('Treaba mare:', bx1, y + 21);
-    doc.setFont('helvetica', 'normal'); doc.text(String(stools.length), bx1 + 34, y + 21);
+    gridItems.forEach((item, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const gx  = ML + col * (gW + 4);
+      const gy  = gTop + row * (gH + 4);
+      doc.setFillColor(240, 246, 253);
+      doc.setDrawColor(200, 220, 245);
+      doc.roundedRect(gx, gy, gW, gH, 2, 2, 'FD');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(120, 140, 170);
+      doc.text(item.icon, gx + gW / 2, gy + 5.5, { align: 'center' });
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(30, 50, 90);
+      doc.text(item.val, gx + gW / 2, gy + 12, { align: 'center' });
+      if (item.sub) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(150, 150, 150);
+        doc.text(item.sub, gx + gW / 2, gy + 16.5, { align: 'center' });
+      }
+    });
 
-    doc.setFont('helvetica', 'bold'); doc.text('Medicatii:', bx2, y + 21);
-    doc.setFont('helvetica', 'normal'); doc.text(String(meds.length), bx2 + 29, y + 21);
+    const gridRows = Math.ceil(gridItems.length / cols);
+    y = gTop + gridRows * (gH + 4) + 4;
 
-    if (isMonth) {
-      const dayCount = new Set(entries.map(e => new Date(e.timestamp).toDateString())).size;
-      const avgMl    = dayCount > 0 ? Math.round(totalMl / dayCount) : 0;
-      doc.setFont('helvetica', 'bold'); doc.text('Medie ml/zi:', bx1, y + 33);
-      doc.setFont('helvetica', 'normal'); doc.text(avgMl > 0 ? `${avgMl} ml` : '—', bx1 + 32, y + 33);
-      doc.setFont('helvetica', 'bold'); doc.text('Zile cu date:', bx2, y + 33);
-      doc.setFont('helvetica', 'normal'); doc.text(String(dayCount), bx2 + 34, y + 33);
-    } else {
-      doc.setFontSize(8.5);
-      doc.setTextColor(130, 130, 130);
-      doc.text(`Formula: ${formulaMeals.length}  |  Total ml: ${totalMl}`, bx1, y + 32);
-      doc.setTextColor(40, 40, 40);
-    }
-    y += statsH + 8;
-
-    // Journal header
-    doc.setFontSize(12);
+    // Journal section header
     doc.setFont('helvetica', 'bold');
-    const journalTitle = period === 'zi' ? 'Jurnal zilnic' : 'Jurnal';
-    doc.text(journalTitle, 12, y);
+    doc.setFontSize(10);
+    doc.setTextColor(74, 144, 217);
+    const journalTitle = period === 'zi' ? 'JURNAL ZILNIC' : 'JURNAL';
+    doc.text(journalTitle, ML, y);
     doc.setFont('helvetica', 'normal');
-    doc.setDrawColor(180, 210, 240);
+    doc.setDrawColor(200, 220, 245);
     doc.setLineWidth(0.4);
-    doc.line(12, y + 2, pageW - 12, y + 2);
+    doc.line(ML, y + 2, pageW - MR, y + 2);
+    doc.setTextColor(30, 30, 30);
     y += 8;
 
     const sorted = [...entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
     if (!sorted.length) {
-      doc.setFontSize(9.5);
+      doc.setFontSize(9);
       doc.setTextColor(160, 160, 160);
-      doc.text('Nicio inregistrare in aceasta perioada.', 14, y);
-      doc.setTextColor(40, 40, 40);
+      doc.text('Nicio inregistrare in aceasta perioada.', ML, y);
+      doc.setTextColor(30, 30, 30);
     } else if (period === 'zi') {
+      let rowIdx = 0;
       sorted.forEach(e => {
-        if (y > pageH - 18) return;
-        y = renderEntryLine(e, y);
+        if (y > pageH - FOOTER - 8) {
+          doc.addPage();
+          addPageHeader(`${babyNameLabel}  |  ${periodLabel} (continuare)`);
+          y = 26;
+          rowIdx = 0;
+        }
+        y = renderEntryRow(e, y, rowIdx++);
       });
     } else {
-      // Grouped by day for week / month
       const groups = {};
       sorted.forEach(e => {
         const key = new Date(e.timestamp).toDateString();
@@ -2166,95 +2310,105 @@ async function exportPrint() {
         groups[key].push(e);
       });
       const sortedKeys = Object.keys(groups).sort((a, b) => new Date(a) - new Date(b));
-
       sortedKeys.forEach(key => {
-        const date      = new Date(key);
+        const date       = new Date(key);
         const dayEntries = groups[key];
-        const dayLabel  = date.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' });
-
-        if (y > pageH - 28) { doc.addPage(); addPageBanner(titleText); y = 28; }
-
+        const dayLabel   = date.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' });
+        if (y > pageH - FOOTER - 28) {
+          doc.addPage();
+          addPageHeader(`${babyNameLabel}  |  ${periodLabel} (continuare)`);
+          y = 26;
+        }
+        // Day header row
         doc.setFillColor(232, 242, 255);
-        doc.rect(8, y - 4, pageW - 16, 8, 'F');
-        doc.setFontSize(9.5);
+        doc.rect(ML, y - 4.5, CW, 7.5, 'F');
         doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
         doc.setTextColor(50, 100, 180);
-        doc.text(dayLabel, 12, y + 1);
+        doc.text(dayLabel, ML + 2, y + 1);
         doc.setFont('helvetica', 'normal');
-        doc.setTextColor(40, 40, 40);
-        y += 7;
-
+        doc.setTextColor(30, 30, 30);
+        y += 7.5;
+        let rowIdx = 0;
         dayEntries.forEach(e => {
-          if (y > pageH - 18) { doc.addPage(); addPageBanner(titleText); y = 28; }
-          y = renderEntryLine(e, y);
+          if (y > pageH - FOOTER - 8) {
+            doc.addPage();
+            addPageHeader(`${babyNameLabel}  |  ${periodLabel} (continuare)`);
+            y = 26;
+            rowIdx = 0;
+          }
+          y = renderEntryRow(e, y, rowIdx++);
         });
-        y += 4;
+        y += 3;
       });
     }
 
     // ── Statistics charts page ────────────────────────────────
-    doc.addPage();
-    addPageBanner('Statistici  -  ultimele 7 zile');
+    if (settings.pdfIncludeCharts !== false) {
+      doc.addPage();
+      addPageHeader('Statistici  -  ultimele 7 zile');
+      const imgW  = CW;
+      const cH260 = (260 / 700) * imgW;
+      let cy = 24;
 
-    const imgW  = pageW - 24;
-    const cH260 = (260 / 700) * imgW;
-    const cH280 = (280 / 700) * imgW;
-    let cy = 26;
+      setPdfProgress('Generez graficul treaba mica...');
+      doc.addImage(buildPdfUrineChartImg(), 'PNG', ML, cy, imgW, cH260, undefined, 'FAST');
+      cy += cH260 + 6;
 
-    setPdfProgress('Generez graficul treaba mica...');
-    doc.addImage(buildPdfUrineChartImg(), 'PNG', 12, cy, imgW, cH260, undefined, 'FAST');
-    cy += cH260 + 8;
+      setPdfProgress('Generez graficul treaba mare...');
+      if (cy + cH260 > pageH - FOOTER) { doc.addPage(); addPageHeader('Statistici (continuare)'); cy = 24; }
+      doc.addImage(buildPdfStoolChartImg(), 'PNG', ML, cy, imgW, cH260, undefined, 'FAST');
+      cy += cH260 + 6;
 
-    setPdfProgress('Generez graficul treaba mare...');
-    if (cy + cH260 > pageH - 18) { doc.addPage(); cy = 14; }
-    doc.addImage(buildPdfStoolChartImg(), 'PNG', 12, cy, imgW, cH260, undefined, 'FAST');
-    cy += cH260 + 8;
+      setPdfProgress('Generez graficul intervale hraniri...');
+      if (cy + cH260 > pageH - FOOTER) { doc.addPage(); addPageHeader('Statistici (continuare)'); cy = 24; }
+      doc.addImage(buildPdfFeedingIntervalsChartImg(), 'PNG', ML, cy, imgW, cH260, undefined, 'FAST');
+      cy += cH260 + 6;
 
-    setPdfProgress('Generez graficul intervale hraniri...');
-    if (cy + cH260 > pageH - 18) { doc.addPage(); cy = 14; }
-    doc.addImage(buildPdfFeedingIntervalsChartImg(), 'PNG', 12, cy, imgW, cH260, undefined, 'FAST');
-    cy += cH260 + 8;
-
-    setPdfProgress('Generez graficul ml formula...');
-    if (cy + cH260 > pageH - 18) { doc.addPage(); cy = 14; }
-    doc.addImage(buildPdfMealMlChartImg(), 'PNG', 12, cy, imgW, cH260, undefined, 'FAST');
+      setPdfProgress('Generez graficul ml formula...');
+      if (cy + cH260 > pageH - FOOTER) { doc.addPage(); addPageHeader('Statistici (continuare)'); cy = 24; }
+      doc.addImage(buildPdfMealMlChartImg(), 'PNG', ML, cy, imgW, cH260, undefined, 'FAST');
+    }
 
     // ── Growth charts ─────────────────────────────────────────
-    const growthRecords = getGrowthRecordsForActiveBaby();
-    if (growthRecords.length > 0) {
-      doc.addPage();
-      addPageBanner('Curbe de crestere (WHO)');
-      const hasHeight = growthRecords.some(r => Number.isFinite(Number(r.heightCm)));
-      const hasHead   = growthRecords.some(r => Number.isFinite(Number(r.headCm)));
-      let gy = 26;
-      setPdfProgress('Generez graficele de crestere...');
-      const growthDefs = [
-        { key: 'weightKg', title: 'Greutate (kg)', unit: 'kg', acc: r => Number(r.weightKg), show: true },
-        { key: 'heightCm', title: 'Inaltime (cm)', unit: 'cm', acc: r => Number(r.heightCm), show: hasHeight },
-        { key: 'headCm',   title: 'Perimetru cranian (cm)', unit: 'cm', acc: r => Number(r.headCm), show: hasHead },
-      ];
-      for (const { key, title, unit, acc, show } of growthDefs) {
-        if (!show) continue;
-        const img = buildPdfGrowthChartImg(key, title, unit, acc);
-        if (!img) continue;
-        if (gy + cH280 > pageH - 18) { doc.addPage(); gy = 14; }
-        doc.addImage(img, 'PNG', 12, gy, imgW, cH280, undefined, 'FAST');
-        gy += cH280 + 8;
+    if (settings.pdfIncludeGrowth !== false) {
+      const growthRecords = getGrowthRecordsForActiveBaby();
+      if (growthRecords.length > 0) {
+        doc.addPage();
+        addPageHeader('Curbe de crestere (WHO)');
+        const imgW  = CW;
+        const cH280 = (280 / 700) * imgW;
+        const hasHeight = growthRecords.some(r => Number.isFinite(Number(r.heightCm)));
+        const hasHead   = growthRecords.some(r => Number.isFinite(Number(r.headCm)));
+        let gy = 24;
+        setPdfProgress('Generez graficele de crestere...');
+        const growthDefs = [
+          { key: 'weightKg', title: 'Greutate (kg)', unit: 'kg', acc: r => Number(r.weightKg), show: true },
+          { key: 'heightCm', title: 'Inaltime (cm)', unit: 'cm', acc: r => Number(r.heightCm), show: hasHeight },
+          { key: 'headCm',   title: 'Perimetru cranian (cm)', unit: 'cm', acc: r => Number(r.headCm), show: hasHead },
+        ];
+        for (const { key, title, unit, acc, show } of growthDefs) {
+          if (!show) continue;
+          const img = buildPdfGrowthChartImg(key, title, unit, acc);
+          if (!img) continue;
+          if (gy + cH280 > pageH - FOOTER) { doc.addPage(); addPageHeader('Curbe de crestere (continuare)'); gy = 24; }
+          doc.addImage(img, 'PNG', ML, gy, imgW, cH280, undefined, 'FAST');
+          gy += cH280 + 6;
+        }
       }
     }
 
-    // ── Footers on all pages ───────────────────────────────────
+    // ── Footer on every page ──────────────────────────────────
     const totalPages = doc.getNumberOfPages();
     for (let pg = 1; pg <= totalPages; pg++) {
       doc.setPage(pg);
+      doc.setDrawColor(210, 210, 210);
       doc.setLineWidth(0.3);
-      doc.setDrawColor(200, 200, 200);
-      doc.line(12, pageH - 11, pageW - 12, pageH - 11);
-      doc.setFontSize(8);
+      doc.line(ML, pageH - 10, pageW - MR, pageH - 10);
+      doc.setFontSize(7.5);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(160, 160, 160);
-      doc.text(`Pagina ${pg} din ${totalPages}`, 12, pageH - 5);
-      doc.text(`RoBby  |  generat la ${genDate}`, pageW - 12, pageH - 5, { align: 'right' });
+      doc.text(`RoBby  ·  Generat pe ${genDate}  ·  Pagina ${pg} din ${totalPages}`, pageW / 2, pageH - 5, { align: 'center' });
     }
 
     setPdfProgress('Finalizez fisierul PDF...');
@@ -2272,10 +2426,12 @@ async function exportPrint() {
 function loadSettingsForm() {
   const baby = getActiveBaby();
   state.editingBabyId = baby?.id || '';
-  document.getElementById('setting-baby-name').value  = baby?.name || '';
-  document.getElementById('setting-birth-date').value = baby?.birthDate || '';
-  document.getElementById('setting-birth-weight').value = baby?.birthWeight || '';
-  document.getElementById('setting-blood-type').value = baby?.bloodType || '';
+
+  // Baby profile sub-form
+  document.getElementById('setting-baby-name').value       = baby?.name || '';
+  document.getElementById('setting-birth-date').value      = baby?.birthDate || '';
+  document.getElementById('setting-birth-weight').value    = baby?.birthWeight || '';
+  document.getElementById('setting-blood-type').value      = baby?.bloodType || '';
   document.getElementById('setting-baby-photo-data').value = baby?.photoDataUrl || '';
   const preview = document.getElementById('baby-photo-preview');
   if (baby?.photoDataUrl) {
@@ -2284,27 +2440,54 @@ function loadSettingsForm() {
   } else {
     preview.classList.add('hidden');
   }
-  document.getElementById('setting-formula').value    = settings.formula || 'NAN Supreme Pro 1';
-  document.getElementById('setting-interval').value   = settings.customInterval || '';
-  document.getElementById('setting-feeding-alert-enabled').checked = !!settings.notifications?.feedingAlert?.enabled;
+  selectGender(baby?.gender || 'boy');
+
+  // Formula / feeding
+  document.getElementById('setting-formula').value  = settings.formula || 'NAN Supreme Pro 1';
+  document.getElementById('setting-interval').value = settings.customInterval || '';
+
+  // Notifications
+  const feedAlert = !!settings.notifications?.feedingAlert?.enabled;
+  document.getElementById('setting-feeding-alert-enabled').checked = feedAlert;
   document.getElementById('setting-feeding-alert-limit').value = settings.notifications?.feedingAlert?.limitHours || 3;
-  document.getElementById('setting-vitamin-d-enabled').checked = !!settings.notifications?.vitaminD?.enabled;
+  const limitRow = document.getElementById('stg-feeding-limit-row');
+  if (limitRow) limitRow.classList.toggle('hidden', !feedAlert);
+
+  const vitD = !!settings.notifications?.vitaminD?.enabled;
+  document.getElementById('setting-vitamin-d-enabled').checked = vitD;
   document.getElementById('setting-vitamin-d-time').value = settings.notifications?.vitaminD?.time || '09:00';
+  const vitDRow = document.getElementById('stg-vitamin-d-time-row');
+  if (vitDRow) vitDRow.classList.toggle('hidden', !vitD);
+
   document.getElementById('setting-vaccine-due-enabled').checked = !!settings.notifications?.vaccineDue?.enabled;
 
-  selectGender(baby?.gender || 'boy');
+  // Reports / PDF
+  const period = settings.defaultReportPeriod || 'zi';
+  document.querySelectorAll('.stg-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === period));
+  const chartsEl = document.getElementById('stg-pdf-charts');
+  const growthEl = document.getElementById('stg-pdf-growth');
+  if (chartsEl) chartsEl.checked = settings.pdfIncludeCharts !== false;
+  if (growthEl) growthEl.checked = settings.pdfIncludeGrowth !== false;
+
+  // App / theme
   applyTheme(settings.theme || 'blue');
   document.getElementById('theme-blue').classList.toggle('active', settings.theme !== 'pink');
   document.getElementById('theme-pink').classList.toggle('active', settings.theme === 'pink');
+  const dmEl = document.getElementById('stg-dark-mode');
+  if (dmEl) dmEl.checked = !!settings.darkMode;
 
-  document.getElementById('family-code-text').textContent = settings.familyCode || '—';
-
+  // Family sync
+  const fcCode = settings.familyCode || '—';
+  document.getElementById('family-code-text').textContent = fcCode;
+  const fcInner = document.getElementById('family-code-text-inner');
+  if (fcInner) fcInner.textContent = fcCode;
   const fb = settings.firebase || {};
-  document.getElementById('fb-api-key').value     = fb.apiKey     || '';
-  document.getElementById('fb-auth-domain').value = fb.authDomain || '';
-  document.getElementById('fb-project-id').value  = fb.projectId  || '';
-  document.getElementById('fb-db-url').value       = fb.databaseURL|| '';
-  document.getElementById('fb-app-id').value       = fb.appId      || '';
+  document.getElementById('fb-api-key').value     = fb.apiKey      || '';
+  document.getElementById('fb-auth-domain').value = fb.authDomain  || '';
+  document.getElementById('fb-project-id').value  = fb.projectId   || '';
+  document.getElementById('fb-db-url').value       = fb.databaseURL || '';
+  document.getElementById('fb-app-id').value       = fb.appId       || '';
+
   renderBabyProfilesList();
   refreshBabySelector();
 }
@@ -2337,6 +2520,7 @@ function saveSettings() {
   settings.customInterval = document.getElementById('setting-interval').value;
   settings.notifications.feedingAlert.limitHours = Math.max(1, Number(document.getElementById('setting-feeding-alert-limit').value || 3));
   settings.notifications.vitaminD.time = document.getElementById('setting-vitamin-d-time').value || '09:00';
+  savePdfSettings();
   saveSettingsToStorage(settings);
   const active = getActiveBaby();
   document.getElementById('header-baby-name').textContent = active?.name || 'RoBby';
@@ -2350,15 +2534,47 @@ function saveSettings() {
 function selectTheme(theme) {
   settings.theme = theme;
   applyTheme(theme);
-  document.getElementById('theme-blue').classList.toggle('active', theme === 'blue');
-  document.getElementById('theme-pink').classList.toggle('active', theme === 'pink');
+  ['blue', 'pink'].forEach(t => {
+    document.getElementById(`theme-${t}`)?.classList.toggle('active', t === theme);
+  });
   saveSettingsToStorage(settings);
-  showToast(`Temă: ${theme === 'blue' ? 'Baby Blue 💙' : 'Cotton Pink 🩷'}`);
+  showToast(`Tema: ${theme === 'blue' ? 'Baby Blue' : 'Cotton Pink'}`);
 }
 
 function applyTheme(theme) {
-  document.getElementById('app').className = `theme-${theme}`;
+  const dark = settings.darkMode ? ' dark' : '';
+  document.getElementById('app').className = `theme-${theme}${dark}`;
   document.getElementById('meta-theme-color').content = theme === 'pink' ? '#C95B87' : '#4A90D9';
+}
+
+function toggleDarkMode(enabled) {
+  settings.darkMode = !!enabled;
+  applyTheme(settings.theme || 'blue');
+  saveSettingsToStorage(settings);
+}
+
+function onFeedingAlertToggle(enabled) {
+  toggleNotificationSetting('feedingAlert', enabled);
+  const row = document.getElementById('stg-feeding-limit-row');
+  if (row) row.classList.toggle('hidden', !enabled);
+}
+
+function onVitaminDToggle(enabled) {
+  toggleNotificationSetting('vitaminD', enabled);
+  const row = document.getElementById('stg-vitamin-d-time-row');
+  if (row) row.classList.toggle('hidden', !enabled);
+}
+
+function setDefaultReportPeriod(period) {
+  settings.defaultReportPeriod = period;
+  saveSettingsToStorage(settings);
+  document.querySelectorAll('.stg-period-btn').forEach(b => b.classList.toggle('active', b.dataset.period === period));
+}
+
+function savePdfSettings() {
+  settings.pdfIncludeCharts = document.getElementById('stg-pdf-charts')?.checked ?? true;
+  settings.pdfIncludeGrowth = document.getElementById('stg-pdf-growth')?.checked ?? true;
+  saveSettingsToStorage(settings);
 }
 
 function toggleNotificationSetting(type, enabled) {
@@ -2427,16 +2643,25 @@ function evaluateFeedingAlert(cfg) {
     hideFeedingAlertBanner();
     return;
   }
-  const meals = getEntriesForDate(new Date()).filter(e => e.type === 'meal');
-  if (!meals.length) {
+  // Search last 24h so overnight meals are included
+  const since = new Date(Date.now() - 24 * 3600000);
+  const activeId = state.activeBabyId || getActiveBabyId();
+  const recentMeals = loadEntries().filter(e =>
+    (!activeId || e.babyId === activeId) &&
+    e.type === 'meal' &&
+    new Date(e.timestamp) >= since
+  );
+  if (!recentMeals.length) {
     hideFeedingAlertBanner();
     return;
   }
-  const lastMeal = [...meals].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
-  const elapsedHours = (Date.now() - new Date(lastMeal.timestamp).getTime()) / 3600000;
-  const threshold = Number(cfg.limitHours || 3) + 1;
+  const lastMeal = recentMeals.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+  const elapsedHours = (Date.now() - new Date(lastMeal.timestamp)) / 3600000;
+  // Use the custom interval the user set, not the notification-specific limitHours
+  const intervalHours = parseFloat(settings.customInterval) || getFeedingGuide().intervalHours;
+  const threshold = intervalHours + 1;
   if (elapsedHours >= threshold) {
-    const txt = `⚠️ A trecut ${elapsedHours.toFixed(1)}h de la ultima hrănire (limită: ${Number(cfg.limitHours || 3)}h + 1h).`;
+    const txt = `⚠️ A trecut ${elapsedHours.toFixed(1)}h de la ultima hrănire (limită: ${intervalHours}h + 1h).`;
     showFeedingAlertBanner(txt);
     notifyOncePerHour('feeding-overdue', '🍼 RoBby – Hrănire întârziată', txt);
   } else {
@@ -2504,22 +2729,28 @@ function triggerNotification() {
 }
 
 // ─── FAMILY SYNC ─────────────────────────────────────────────
+function _setFamilyCodeDisplay(code) {
+  document.getElementById('family-code-text').textContent = code;
+  const inner = document.getElementById('family-code-text-inner');
+  if (inner) inner.textContent = code;
+}
+
 function createFamily() {
   const code = uid();
   settings.familyCode = code;
   saveSettingsToStorage(settings);
-  document.getElementById('family-code-text').textContent = code;
+  _setFamilyCodeDisplay(code);
   showToast(`Cod familie: ${code}`);
   if (state.firebaseDB) connectFirebaseFamily(code);
 }
 
 function joinFamily() {
   const code = document.getElementById('join-code').value.trim().toUpperCase();
-  if (code.length !== 6) { showToast('Codul trebuie să aibă 6 caractere'); return; }
+  if (code.length !== 6) { showToast('Codul trebuie sa aiba 6 caractere'); return; }
   settings.familyCode = code;
   saveSettingsToStorage(settings);
-  document.getElementById('family-code-text').textContent = code;
-  showToast(`Alăturat familiei: ${code}`);
+  _setFamilyCodeDisplay(code);
+  showToast(`Alaturat familiei: ${code}`);
   if (state.firebaseDB) connectFirebaseFamily(code);
 }
 

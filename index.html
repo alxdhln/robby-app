@@ -137,9 +137,16 @@
           </div>
           <div class="form-group" id="formula-brand-group">
             <label>Marcă formulă</label>
-            <input type="text" id="meal-formula" class="input" list="formula-brands-list"
-                   placeholder="Caută sau scrie marca…" autocomplete="off">
-            <datalist id="formula-brands-list"></datalist>
+            <div class="formula-input-wrapper">
+              <input type="text" id="meal-formula" class="input" list="formula-brands-list"
+                     placeholder="Caută sau scrie marca…" autocomplete="off"
+                     onclick="onFormulaBrandClick()"
+                     onblur="onFormulaBrandBlur()"
+                     oninput="onFormulaBrandInput()">
+              <button type="button" class="formula-clear-btn" id="formula-clear-btn"
+                      onclick="clearFormulaBrand()" style="display:none">✕</button>
+              <datalist id="formula-brands-list"></datalist>
+            </div>
           </div>
           <div class="form-group hidden" id="breast-duration-group">
             <label>Durata alăptare (minute)</label>
@@ -368,172 +375,244 @@
 
     <!-- ══════════════ SETĂRI ══════════════ -->
     <div id="screen-settings" class="screen">
-      <div class="screen-content">
-        <h2 class="screen-title">⚙️ Setări</h2>
+      <div class="screen-content stg-content">
+        <h2 class="screen-title">Setări</h2>
 
-        <div class="card settings-card">
-          <h3 class="card-title">👶 Informații bebeluș</h3>
-          <div class="form-group">
-            <label>Profiluri existente</label>
+        <!-- BEBELUȘ -->
+        <div class="stg-section-label">BEBELUȘ</div>
+        <div class="stg-group">
+          <!-- Baby profiles strip -->
+          <div class="stg-row stg-row-profiles">
             <div id="baby-profiles-list" class="baby-profiles-list"></div>
           </div>
-          <div class="form-group">
-            <label>Nume</label>
-            <input type="text" id="setting-baby-name" class="input" placeholder="ex: Andrei">
-          </div>
-          <div class="form-group">
-            <label>Data nașterii</label>
-            <input type="date" id="setting-birth-date" class="input">
-          </div>
-          <div class="form-group">
-            <label>Greutate la naștere (kg)</label>
-            <input type="number" id="setting-birth-weight" class="input" placeholder="ex: 3.2" min="0.5" max="8" step="0.01">
-          </div>
-          <div class="form-group">
-            <label>Grupa sanguină</label>
-            <input type="text" id="setting-blood-type" class="input" placeholder="ex: O+, A-, B+, AB+">
-          </div>
-          <div class="form-group">
-            <label>Poză profil (opțional)</label>
-            <input type="file" id="setting-baby-photo" class="input" accept="image/*" onchange="onBabyPhotoSelected(event)">
-            <input type="hidden" id="setting-baby-photo-data">
-            <div id="baby-photo-preview" class="baby-photo-preview hidden"></div>
-          </div>
-          <div class="form-group">
-            <label>Gen</label>
-            <div class="toggle-group">
-              <button class="toggle-btn" id="gender-boy" onclick="selectGender('boy')">👦 Băiat</button>
-              <button class="toggle-btn" id="gender-girl" onclick="selectGender('girl')">👧 Fată</button>
+          <!-- Baby profile collapsible -->
+          <button class="stg-row stg-chevron-row" onclick="this.closest('.stg-group').querySelector('.stg-sub').classList.toggle('hidden');this.querySelector('.stg-chev').classList.toggle('open')">
+            <span class="stg-row-icon">👶</span>
+            <span class="stg-row-label">Profil bebeluș</span>
+            <span class="stg-chev">›</span>
+          </button>
+          <div class="stg-sub hidden">
+            <div class="stg-sub-inner">
+              <div class="form-group">
+                <label>Nume</label>
+                <input type="text" id="setting-baby-name" class="input" placeholder="ex: Andrei">
+              </div>
+              <div class="form-group">
+                <label>Data nașterii</label>
+                <input type="date" id="setting-birth-date" class="input">
+              </div>
+              <div class="form-group">
+                <label>Greutate la naștere (kg)</label>
+                <input type="number" id="setting-birth-weight" class="input" placeholder="ex: 3.2" min="0.5" max="8" step="0.01">
+              </div>
+              <div class="form-group">
+                <label>Grupă sanguină</label>
+                <input type="text" id="setting-blood-type" class="input" placeholder="ex: O+, A-, B+, AB+">
+              </div>
+              <div class="form-group">
+                <label>Poză profil (opțional)</label>
+                <input type="file" id="setting-baby-photo" class="input" accept="image/*" onchange="onBabyPhotoSelected(event)">
+                <input type="hidden" id="setting-baby-photo-data">
+                <div id="baby-photo-preview" class="baby-photo-preview hidden"></div>
+              </div>
+              <div class="form-group">
+                <label>Gen</label>
+                <div class="toggle-group">
+                  <button class="toggle-btn" id="gender-boy" onclick="selectGender('boy')">👦 Băiat</button>
+                  <button class="toggle-btn" id="gender-girl" onclick="selectGender('girl')">👧 Fată</button>
+                </div>
+              </div>
+              <div class="stg-sub-actions">
+                <button class="btn-primary" onclick="saveSettings()">Salvează profilul</button>
+                <button class="btn-secondary" onclick="createNewBabyProfile()">Profil nou</button>
+                <button class="btn-danger" onclick="deleteCurrentBabyProfile()">Șterge profilul</button>
+              </div>
             </div>
           </div>
-          <div class="settings-actions-row">
-            <button class="btn-primary" onclick="saveSettings()">Salvează profilul</button>
-            <button class="btn-secondary" onclick="createNewBabyProfile()">Profil nou</button>
-            <button class="btn-danger" onclick="deleteCurrentBabyProfile()">Șterge profilul</button>
+
+          <div class="stg-divider"></div>
+          <!-- Formula brand -->
+          <div class="stg-row">
+            <span class="stg-row-icon">🥤</span>
+            <span class="stg-row-label">Formulă lapte implicită</span>
+            <input type="text" id="setting-formula" class="stg-inline-input" placeholder="NAN Supreme Pro 1" onchange="saveSettings()">
+          </div>
+          <div class="stg-divider"></div>
+          <!-- Custom interval -->
+          <div class="stg-row">
+            <span class="stg-row-icon">⏱</span>
+            <span class="stg-row-label">Interval hrănire (ore)</span>
+            <input type="number" id="setting-interval" class="stg-inline-input stg-num-input" min="1" max="8" step="0.5" placeholder="Auto" onchange="saveSettings()">
           </div>
         </div>
 
-        <div class="card settings-card">
-          <h3 class="card-title">🥤 Formulă lapte</h3>
-          <div class="form-group">
-            <label>Marcă formulă (implicită)</label>
-            <input type="text" id="setting-formula" class="input" placeholder="ex: NAN Supreme Pro 1">
+        <!-- NOTIFICĂRI -->
+        <div class="stg-section-label">NOTIFICĂRI</div>
+        <div class="stg-group">
+          <div class="stg-row">
+            <span class="stg-row-icon">🚨</span>
+            <span class="stg-row-label">Alertă hrănire întârziată</span>
+            <label class="switch">
+              <input type="checkbox" id="setting-feeding-alert-enabled" onchange="onFeedingAlertToggle(this.checked)">
+              <span class="slider"></span>
+            </label>
           </div>
-          <button class="btn-secondary btn-full" onclick="saveSettings()">Salvează</button>
-        </div>
+          <div id="stg-feeding-limit-row" class="stg-sub-row hidden">
+            <span class="stg-row-label">Limită alertă (ore)</span>
+            <input type="number" id="setting-feeding-alert-limit" class="stg-inline-input stg-num-input" min="1" max="8" step="0.5" placeholder="3" onchange="saveSettings()">
+          </div>
 
-        <div class="card settings-card">
-          <h3 class="card-title">🔔 Notificări</h3>
-          <div class="form-group">
-            <div class="toggle-row">
-              <label>Alertă hrănire întârziată</label>
-              <label class="switch">
-                <input type="checkbox" id="setting-feeding-alert-enabled" onchange="toggleNotificationSetting('feedingAlert', this.checked)">
-                <span class="slider"></span>
-              </label>
-            </div>
+          <div class="stg-divider"></div>
+          <div class="stg-row">
+            <span class="stg-row-icon">☀️</span>
+            <span class="stg-row-label">Reminder zilnic Vitamina D</span>
+            <label class="switch">
+              <input type="checkbox" id="setting-vitamin-d-enabled" onchange="onVitaminDToggle(this.checked)">
+              <span class="slider"></span>
+            </label>
           </div>
-          <div class="form-group">
-            <label>Limită hrănire (ore, default 3)</label>
-            <input type="number" id="setting-feeding-alert-limit" class="input" min="1" max="8" step="0.5" placeholder="3">
+          <div id="stg-vitamin-d-time-row" class="stg-sub-row hidden">
+            <span class="stg-row-label">Ora reminder</span>
+            <input type="time" id="setting-vitamin-d-time" class="stg-inline-input" value="09:00" onchange="setVitaminDReminderTime(this.value)">
           </div>
-          <div class="form-group">
-            <div class="toggle-row">
-              <label>Reminder zilnic Vitamina D</label>
-              <label class="switch">
-                <input type="checkbox" id="setting-vitamin-d-enabled" onchange="toggleNotificationSetting('vitaminD', this.checked)">
-                <span class="slider"></span>
-              </label>
-            </div>
-          </div>
-          <div class="form-group">
-            <label>Ora reminder Vitamina D</label>
-            <input type="time" id="setting-vitamin-d-time" class="input" value="09:00" onchange="setVitaminDReminderTime(this.value)">
-          </div>
-          <div class="form-group">
-            <div class="toggle-row">
-              <label>Alertă vaccin scadent curând</label>
-              <label class="switch">
-                <input type="checkbox" id="setting-vaccine-due-enabled" onchange="toggleNotificationSetting('vaccineDue', this.checked)">
-                <span class="slider"></span>
-              </label>
-            </div>
-          </div>
-          <div class="form-group">
-            <label>Interval personalizat hrănire (ore, opțional)</label>
-            <input type="number" id="setting-interval" class="input" min="1" max="8" step="0.5" placeholder="Automat bazat pe vârstă">
-          </div>
-          <button class="btn-secondary btn-full" onclick="saveSettings()">Salvează notificările</button>
-        </div>
 
-        <div class="card settings-card">
-          <h3 class="card-title">🎨 Temă culoare</h3>
-          <div class="theme-options">
-            <button class="theme-option active" id="theme-blue" onclick="selectTheme('blue')">
-              <div class="theme-preview blue-preview"></div>
-              <span>Baby Blue</span>
-            </button>
-            <button class="theme-option" id="theme-pink" onclick="selectTheme('pink')">
-              <div class="theme-preview pink-preview"></div>
-              <span>Cotton Pink</span>
-            </button>
+          <div class="stg-divider"></div>
+          <div class="stg-row">
+            <span class="stg-row-icon">💉</span>
+            <span class="stg-row-label">Alertă vaccin scadent</span>
+            <label class="switch">
+              <input type="checkbox" id="setting-vaccine-due-enabled" onchange="toggleNotificationSetting('vaccineDue', this.checked)">
+              <span class="slider"></span>
+            </label>
           </div>
         </div>
 
-        <div class="card settings-card">
-          <h3 class="card-title">👨‍👩‍👧 Sincronizare familie</h3>
-          <p class="help-text">Sincronizați datele cu celălalt părinte în timp real.</p>
-          <div class="form-group">
-            <label>Codul familiei</label>
-            <div class="code-display">
-              <span id="family-code-text">—</span>
-              <button class="icon-btn" onclick="copyFamilyCode()" title="Copiază">📋</button>
+        <!-- RAPOARTE -->
+        <div class="stg-section-label">RAPOARTE</div>
+        <div class="stg-group">
+          <div class="stg-row stg-row-tall">
+            <span class="stg-row-icon">📅</span>
+            <div class="stg-row-body">
+              <span class="stg-row-label">Perioadă implicită raport</span>
+              <div class="stg-period-picker">
+                <button class="stg-period-btn active" data-period="zi" onclick="setDefaultReportPeriod('zi')">Zi</button>
+                <button class="stg-period-btn" data-period="saptamana" onclick="setDefaultReportPeriod('saptamana')">Săptămână</button>
+                <button class="stg-period-btn" data-period="luna" onclick="setDefaultReportPeriod('luna')">Lună</button>
+              </div>
             </div>
           </div>
-          <div class="sync-buttons">
-            <button class="btn-primary" onclick="createFamily()">Creează familie nouă</button>
-            <div class="or-divider">sau</div>
-            <div class="join-family">
-              <input type="text" id="join-code" class="input" placeholder="COD FAMILIE" maxlength="6" style="letter-spacing:3px;text-transform:uppercase">
-              <button class="btn-secondary" onclick="joinFamily()">Alătură-te</button>
-            </div>
-          </div>
-          <div id="sync-status" class="sync-status"></div>
 
-          <details class="firebase-config">
-            <summary>⚙️ Configurare Firebase (pentru sincronizare)</summary>
-            <p class="help-text" style="margin-top:12px">
-              1. Mergeți pe <strong>firebase.google.com</strong><br>
-              2. Creați proiect nou gratuit<br>
-              3. Activați <strong>Realtime Database</strong><br>
-              4. Copiați configurația de mai jos
-            </p>
-            <div class="form-group">
-              <label>API Key</label>
-              <input type="text" id="fb-api-key" class="input small-input" placeholder="AIza…">
-            </div>
-            <div class="form-group">
-              <label>Auth Domain</label>
-              <input type="text" id="fb-auth-domain" class="input small-input" placeholder="proiect.firebaseapp.com">
-            </div>
-            <div class="form-group">
-              <label>Project ID</label>
-              <input type="text" id="fb-project-id" class="input small-input" placeholder="robby-familia-mea">
-            </div>
-            <div class="form-group">
-              <label>Database URL</label>
-              <input type="text" id="fb-db-url" class="input small-input" placeholder="https://proiect-rtdb.firebaseio.com">
-            </div>
-            <div class="form-group">
-              <label>App ID</label>
-              <input type="text" id="fb-app-id" class="input small-input" placeholder="1:xxx:web:xxx">
-            </div>
-            <button class="btn-primary btn-full" onclick="saveFirebaseConfig()">Conectează Firebase</button>
-          </details>
+          <div class="stg-divider"></div>
+          <div class="stg-row">
+            <span class="stg-row-icon">📊</span>
+            <span class="stg-row-label">Include grafice în PDF</span>
+            <label class="switch">
+              <input type="checkbox" id="stg-pdf-charts" checked onchange="savePdfSettings()">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="stg-divider"></div>
+          <div class="stg-row">
+            <span class="stg-row-icon">📈</span>
+            <span class="stg-row-label">Include curbe de creștere în PDF</span>
+            <label class="switch">
+              <input type="checkbox" id="stg-pdf-growth" checked onchange="savePdfSettings()">
+              <span class="slider"></span>
+            </label>
+          </div>
         </div>
 
-        <button class="btn-danger btn-full" onclick="confirmClearData()" style="margin-top:4px">🗑️ Șterge toate datele</button>
-        <p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:20px;padding-bottom:4px">RoBby v2.1 · Made with ❤️ for parents</p>
+        <!-- APLICAȚIE -->
+        <div class="stg-section-label">APLICAȚIE</div>
+        <div class="stg-group">
+          <!-- Dark mode -->
+          <div class="stg-row">
+            <span class="stg-row-icon">🌙</span>
+            <span class="stg-row-label">Mod întunecat</span>
+            <label class="switch">
+              <input type="checkbox" id="stg-dark-mode" onchange="toggleDarkMode(this.checked)">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="stg-divider"></div>
+          <!-- Theme color -->
+          <div class="stg-row stg-row-tall">
+            <span class="stg-row-icon">🎨</span>
+            <div class="stg-row-body">
+              <span class="stg-row-label">Temă culoare</span>
+              <div class="stg-theme-row">
+                <button class="stg-theme-btn" id="theme-blue" onclick="selectTheme('blue')">
+                  <span class="stg-theme-dot blue-dot"></span>Baby Blue
+                </button>
+                <button class="stg-theme-btn" id="theme-pink" onclick="selectTheme('pink')">
+                  <span class="stg-theme-dot pink-dot"></span>Cotton Pink
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="stg-divider"></div>
+          <!-- Language (disabled) -->
+          <div class="stg-row stg-row-disabled">
+            <span class="stg-row-icon">🌐</span>
+            <span class="stg-row-label">Limbă</span>
+            <span class="stg-row-value">Română</span>
+          </div>
+
+          <div class="stg-divider"></div>
+          <!-- Sync collapsible -->
+          <button class="stg-row stg-chevron-row" onclick="document.getElementById('stg-sync-panel').classList.toggle('hidden');this.querySelector('.stg-chev').classList.toggle('open')">
+            <span class="stg-row-icon">👨‍👩‍👧</span>
+            <span class="stg-row-label">Sincronizare familie</span>
+            <span class="stg-row-value" id="family-code-text">—</span>
+            <span class="stg-chev">›</span>
+          </button>
+          <div id="stg-sync-panel" class="stg-sub hidden">
+            <div class="stg-sub-inner">
+              <p class="help-text">Sincronizați datele cu celălalt părinte în timp real.</p>
+              <div class="form-group">
+                <label>Codul familiei</label>
+                <div class="code-display">
+                  <span id="family-code-text-inner" style="font-size:22px;font-weight:800;letter-spacing:4px;color:var(--primary-dark);flex:1;text-align:center">—</span>
+                  <button class="icon-btn" onclick="copyFamilyCode()" title="Copiază">📋</button>
+                </div>
+              </div>
+              <div class="sync-buttons">
+                <button class="btn-primary" onclick="createFamily()">Creează familie nouă</button>
+                <div class="or-divider">sau</div>
+                <div class="join-family">
+                  <input type="text" id="join-code" class="input" placeholder="COD FAMILIE" maxlength="6" style="letter-spacing:3px;text-transform:uppercase">
+                  <button class="btn-secondary" onclick="joinFamily()">Alătură-te</button>
+                </div>
+              </div>
+              <div id="sync-status" class="sync-status"></div>
+              <details class="firebase-config" style="margin-top:12px">
+                <summary>⚙️ Configurare Firebase</summary>
+                <p class="help-text" style="margin-top:10px">1. firebase.google.com → proiect nou → Realtime Database → copiați config.</p>
+                <div class="form-group"><label>API Key</label><input type="text" id="fb-api-key" class="input small-input" placeholder="AIza…"></div>
+                <div class="form-group"><label>Auth Domain</label><input type="text" id="fb-auth-domain" class="input small-input" placeholder="proiect.firebaseapp.com"></div>
+                <div class="form-group"><label>Project ID</label><input type="text" id="fb-project-id" class="input small-input" placeholder="robby-familia-mea"></div>
+                <div class="form-group"><label>Database URL</label><input type="text" id="fb-db-url" class="input small-input" placeholder="https://proiect-rtdb.firebaseio.com"></div>
+                <div class="form-group"><label>App ID</label><input type="text" id="fb-app-id" class="input small-input" placeholder="1:xxx:web:xxx"></div>
+                <button class="btn-primary btn-full" onclick="saveFirebaseConfig()">Conectează Firebase</button>
+              </details>
+            </div>
+          </div>
+
+          <div class="stg-divider"></div>
+          <!-- App version -->
+          <div class="stg-row stg-row-disabled">
+            <span class="stg-row-icon">ℹ️</span>
+            <span class="stg-row-label">Versiune aplicație</span>
+            <span class="stg-row-value">RoBby v2.1</span>
+          </div>
+        </div>
+
+        <!-- Destructive -->
+        <button class="btn-danger btn-full stg-danger-btn" onclick="confirmClearData()">🗑️ Șterge toate datele</button>
+        <p class="stg-footer-note">Made with ❤️ for parents</p>
       </div>
     </div>
 
