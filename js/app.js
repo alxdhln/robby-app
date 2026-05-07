@@ -2,6 +2,15 @@
    RoBby v2.0 – Baby Tracker
    ============================================================= */
 
+// ─── FORMULA BRANDS ───────────────────────────────────────────
+const FORMULA_BRANDS = [
+  'NAN Supreme Pro 1','NAN Supreme Pro 2','NAN Optipro 1','NAN Optipro 2',
+  'Aptamil 1','Aptamil 2','Aptamil Pronutra','Nutrilon 1','Nutrilon 2',
+  'Similac Advance','Similac Total Comfort','Enfamil Premium','Enfamil Gentlease',
+  'HiPP BIO 1','HiPP Combiotic 2','Humana 1','Humana 2',
+  'Bebivita 1','Novalac 1','Milupa Milumil 1',
+];
+
 // ─── FEEDING GUIDE ────────────────────────────────────────────
 // NAN Supreme Pro 1 — confirmed via label data.
 // Key: 32 days old (1 lună + 2 zile) → 5h interval → 06:42+5h = 11:42
@@ -28,6 +37,7 @@ const state = {
   firebaseDB: null,
   firebaseRef: null,
   lastNotificationAtByTag: {},
+  statsMonthOffset: 0,
 };
 
 // ─── SETTINGS ────────────────────────────────────────────────
@@ -294,6 +304,26 @@ function formatDateShort(date) {
   return new Date(date).toLocaleDateString('ro-RO', { day: 'numeric', month: 'long' });
 }
 
+function fmtDMY(date) {
+  const d = new Date(date);
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+}
+
+function setFormNow(prefix) {
+  const now = new Date();
+  const dateEl = document.getElementById(`${prefix}-date`);
+  const timeEl = document.getElementById(`${prefix}-time`);
+  if (dateEl) dateEl.value = now.toISOString().slice(0, 10);
+  if (timeEl) timeEl.value = now.toTimeString().slice(0, 5);
+}
+
+function getFormDateTime(prefix) {
+  const dateEl = document.getElementById(`${prefix}-date`);
+  const timeEl = document.getElementById(`${prefix}-time`);
+  if (!dateEl?.value || !timeEl?.value) return null;
+  return new Date(`${dateEl.value}T${timeEl.value}`).toISOString();
+}
+
 function toLocalDatetimeInput(date) {
   const d = new Date(date);
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
@@ -336,6 +366,9 @@ function showModal(title, msg, onConfirm) {
 function closeModal() { document.getElementById('modal').classList.add('hidden'); }
 
 // ─── NAVIGATION ──────────────────────────────────────────────
+const NAV_COPIL_SCREENS = ['meal','urine','stool','medication','vaccines'];
+const NAV_INFO_SCREENS  = ['report','statistics','growth'];
+
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -343,22 +376,26 @@ function showScreen(name) {
   const screen = document.getElementById(`screen-${name}`);
   if (screen) screen.classList.add('active');
 
-  const btn = document.querySelector(`.nav-btn[data-screen="${name}"]`);
-  if (btn) btn.classList.add('active');
+  if (name === 'home') {
+    document.querySelector('.nav-btn[data-screen="home"]')?.classList.add('active');
+  } else if (NAV_COPIL_SCREENS.includes(name)) {
+    document.getElementById('nav-btn-copil')?.classList.add('active');
+  } else if (NAV_INFO_SCREENS.includes(name)) {
+    document.getElementById('nav-btn-info')?.classList.add('active');
+  }
 
   state.currentScreen = name;
 
-  if (name === 'home')     refreshHome();
-  if (name === 'meal')     initMealForm();
-  if (name === 'urine')    initUrineForm();
-  if (name === 'stool')    initStoolForm();
-  if (name === 'temperature') initTemperatureForm();
+  if (name === 'home')       refreshHome();
+  if (name === 'meal')       initMealForm();
+  if (name === 'urine')      initUrineForm();
+  if (name === 'stool')      initStoolForm();
   if (name === 'medication') initMedicationForm();
   if (name === 'statistics') refreshStatistics();
-  if (name === 'growth') refreshGrowth();
-  if (name === 'vaccines') refreshVaccines();
-  if (name === 'report')   refreshReport();
-  if (name === 'settings') loadSettingsForm();
+  if (name === 'growth')     refreshGrowth();
+  if (name === 'vaccines')   refreshVaccines();
+  if (name === 'report')     refreshReport();
+  if (name === 'settings')   loadSettingsForm();
 }
 
 // ─── HEADER HELPERS ──────────────────────────────────────────
@@ -492,6 +529,19 @@ function refreshHome() {
 
   updateNextFeeding(meals);
   renderTimeline(todayEntries.slice(0, 10));
+  refreshVaccineBanner();
+}
+
+function refreshVaccineBanner() {
+  const banner = document.getElementById('vaccine-alert-banner');
+  if (!banner) return;
+  const dueSoon = getVaccinesDueSoon(30);
+  if (dueSoon.length) {
+    banner.textContent = `💉 ${dueSoon.length} vaccin(uri) scadente în următoarele 30 zile — apasă pentru detalii`;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
 }
 
 // ─── FEEDING TIMER (fix #1) ───────────────────────────────────
@@ -568,7 +618,7 @@ function entryHTML(e) {
       detail = 'Sân';
     } else {
       title  = `Hrănire · ${e.ml} ml`;
-      detail = settings.formula || 'Formulă';
+      detail = e.formula || settings.formula || 'Formulă';
     }
     if (e.notes) detail += ' · ' + e.notes;
   } else if (e.type === 'urine') {
@@ -622,7 +672,7 @@ function entryHTMLFlat(e) {
   if (e.type === 'meal') {
     emoji  = '🍼';
     title  = e.milkType === 'breast' ? `Alăptare${e.duration ? ` · ${e.duration} min` : ''}` : `Hrănire · ${e.ml} ml`;
-    detail = e.milkType === 'formula' ? settings.formula || 'Formulă' : 'Sân';
+    detail = e.milkType === 'formula' ? (e.formula || settings.formula || 'Formulă') : 'Sân';
     if (e.notes) detail += ' · ' + e.notes;
   } else if (e.type === 'urine') {
     emoji  = '💧';
@@ -668,7 +718,7 @@ function confirmDelete(id) {
 
 // ─── MEAL FORM ───────────────────────────────────────────────
 function initMealForm() {
-  document.getElementById('meal-time').value  = toLocalDatetimeInput(new Date());
+  setFormNow('meal');
   document.getElementById('meal-notes').value = '';
   selectMilkType('formula');
   const guide   = getFeedingGuide();
@@ -676,6 +726,10 @@ function initMealForm() {
   document.getElementById('meal-ml').value = guide.ml;
   document.getElementById('suggested-amount').textContent =
     `✓ Recomandat: ${guide.ml} ml · ${guide.scoops} linguri (${guide.label}) · ${formula}`;
+  const dl = document.getElementById('formula-brands-list');
+  if (dl) dl.innerHTML = FORMULA_BRANDS.map(b => `<option value="${b}">`).join('');
+  const formulaEl = document.getElementById('meal-formula');
+  if (formulaEl) formulaEl.value = formula;
 }
 
 function selectMilkType(type) {
@@ -684,6 +738,7 @@ function selectMilkType(type) {
   document.getElementById('milk-breast').classList.toggle('active', type === 'breast');
   document.getElementById('ml-group').classList.toggle('hidden', type === 'breast');
   document.getElementById('breast-duration-group').classList.toggle('hidden', type === 'formula');
+  document.getElementById('formula-brand-group')?.classList.toggle('hidden', type !== 'formula');
 }
 
 function adjustMl(d) {
@@ -698,15 +753,17 @@ function adjustDuration(d) {
 }
 
 function saveMeal() {
-  const timeVal = document.getElementById('meal-time').value;
-  if (!timeVal) { showToast('Selectați ora hrănirii'); return; }
+  const ts = getFormDateTime('meal');
+  if (!ts) { showToast('Selectați data și ora hrănirii'); return; }
 
-  const entry = { type: 'meal', timestamp: new Date(timeVal).toISOString(), milkType: state.milkType };
+  const entry = { type: 'meal', timestamp: ts, milkType: state.milkType };
 
   if (state.milkType === 'formula') {
     const ml = parseInt(document.getElementById('meal-ml').value);
     if (!ml || ml < 0) { showToast('Introduceți cantitatea în ml'); return; }
     entry.ml = ml;
+    const formulaBrand = document.getElementById('meal-formula')?.value?.trim();
+    if (formulaBrand) entry.formula = formulaBrand;
   } else {
     entry.duration = parseInt(document.getElementById('meal-duration').value) || 15;
   }
@@ -719,9 +776,9 @@ function saveMeal() {
   showScreen('home');
 }
 
-// ─── PIPI FORM (fix #5 — fără cantitate) ─────────────────────
+// ─── PIPI FORM ───────────────────────────────────────────────
 function initUrineForm() {
-  document.getElementById('urine-time').value  = toLocalDatetimeInput(new Date());
+  setFormNow('urine');
   document.getElementById('urine-notes').value = '';
   state.urineColor = 'clear';
   document.querySelectorAll('#screen-urine .color-btn').forEach(b => b.classList.remove('active'));
@@ -736,32 +793,25 @@ function selectUrineColor(btn, val) {
 }
 
 function saveUrine() {
-  const timeVal = document.getElementById('urine-time').value;
-  if (!timeVal) { showToast('Selectați ora'); return; }
+  const ts = getFormDateTime('urine');
+  if (!ts) { showToast('Selectați data și ora'); return; }
   const notes = document.getElementById('urine-notes').value.trim();
-  addEntry({ type: 'urine', timestamp: new Date(timeVal).toISOString(), color: state.urineColor, ...(notes && { notes }) });
+  addEntry({ type: 'urine', timestamp: ts, color: state.urineColor, ...(notes && { notes }) });
   showToast('✓ Pipi salvat!');
   showScreen('home');
 }
 
 // ─── CACA FORM ───────────────────────────────────────────────
 function initStoolForm() {
-  document.getElementById('stool-time').value  = toLocalDatetimeInput(new Date());
+  setFormNow('stool');
   document.getElementById('stool-notes').value = '';
   state.stoolColor  = 'yellow';
   state.stoolAspect = 'normal';
-  document.querySelectorAll('#screen-stool .color-btn').forEach(b => b.classList.remove('active'));
-  const yel = document.querySelector('#screen-stool .color-btn[data-value="yellow"]');
-  if (yel) yel.classList.add('active');
+  const colorSel = document.getElementById('stool-color-select');
+  if (colorSel) colorSel.value = 'yellow';
   ['normal','liquid','hard','mucus'].forEach(a =>
     document.getElementById(`stool-${a}`)?.classList.toggle('active', a === 'normal')
   );
-}
-
-function selectStoolColor(btn, val) {
-  state.stoolColor = val;
-  document.querySelectorAll('#screen-stool .color-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
 }
 
 function selectStoolAspect(btn, val) {
@@ -771,11 +821,13 @@ function selectStoolAspect(btn, val) {
 }
 
 function saveStool() {
-  const timeVal = document.getElementById('stool-time').value;
-  if (!timeVal) { showToast('Selectați ora'); return; }
+  const ts = getFormDateTime('stool');
+  if (!ts) { showToast('Selectați data și ora'); return; }
+  const colorSel = document.getElementById('stool-color-select');
+  const color = colorSel ? colorSel.value : state.stoolColor;
   const notes = document.getElementById('stool-notes').value.trim();
-  addEntry({ type: 'stool', timestamp: new Date(timeVal).toISOString(), color: state.stoolColor, aspect: state.stoolAspect, ...(notes && { notes }) });
-  if (['red','white'].includes(state.stoolColor)) {
+  addEntry({ type: 'stool', timestamp: ts, color, aspect: state.stoolAspect, ...(notes && { notes }) });
+  if (['red','white','black'].includes(color)) {
     showToast('⚠️ Culoare neobișnuită! Consultați medicul.', 4000);
   } else {
     showToast('✓ Caca salvată!');
@@ -994,35 +1046,75 @@ function renderLineChart(data) {
   `;
 }
 
+function getMonthlyMlData(year, month) {
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+  return Array.from({length: daysInMonth}, (_, i) => {
+    const date = new Date(year, month, i + 1);
+    if (date > today) return { day: i + 1, value: 0 };
+    const meals = getEntriesForDate(date).filter(e => e.type === 'meal' && e.milkType === 'formula');
+    return { day: i + 1, value: meals.reduce((s, m) => s + (m.ml || 0), 0) };
+  });
+}
+
+function getMonthlyStoolData(year, month) {
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+  return Array.from({length: daysInMonth}, (_, i) => {
+    const date = new Date(year, month, i + 1);
+    if (date > today) return { day: i + 1, value: 0 };
+    return { day: i + 1, value: getEntriesForDate(date).filter(e => e.type === 'stool').length };
+  });
+}
+
+function changeStatsMonth(delta) {
+  const now = new Date();
+  const newOffset = state.statsMonthOffset + delta;
+  const targetDate = new Date(now.getFullYear(), now.getMonth() + newOffset, 1);
+  if (targetDate > now) return;
+  state.statsMonthOffset = newOffset;
+  refreshStatistics();
+}
+
+function renderMonthlyBarChart(data, isCurrentMonth) {
+  const max = Math.max(1, ...data.map(d => d.value || 0));
+  const nowDay = isCurrentMonth ? new Date().getDate() : -1;
+  return `<div class="monthly-bar-chart">
+    ${data.map(d => {
+      const pct = Math.round(((d.value || 0) / max) * 100);
+      return `<div class="monthly-bar-col${d.day === nowDay ? ' today' : ''}">
+        <div class="monthly-bar-val">${d.value > 0 ? d.value : ''}</div>
+        <div class="monthly-bar" style="height:${pct}%"></div>
+        <div class="monthly-bar-day">${d.day}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
 function buildStatisticsMarkup() {
-  const diaper = getDiaperStatsLast7Days();
-  const feeding = getFeedingIntervalsLast7Days();
-  const sleep = getSleepHoursLast7Days();
+  const now = new Date();
+  const targetDate = new Date(now.getFullYear(), now.getMonth() + state.statsMonthOffset, 1);
+  const year = targetDate.getFullYear();
+  const month = targetDate.getMonth();
+  const monthLabel = targetDate.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' });
+  const isCurrentMonth = now.getFullYear() === year && now.getMonth() === month;
+
+  const mlData    = getMonthlyMlData(year, month);
+  const stoolData = getMonthlyStoolData(year, month);
+
   return `
-    <div class="chart-card" data-chart-id="diaper">
-      <div class="chart-title">Scutece / zi (ultimele 7 zile)</div>
-      ${renderStackedBarChart(diaper, ['wet', 'dirty', 'both'], ['seg-wet', 'seg-dirty', 'seg-both'])}
-      <div class="chart-legend">
-        <span><span class="legend-dot seg-wet"></span>Umed</span>
-        <span><span class="legend-dot seg-dirty"></span>Murdar</span>
-        <span><span class="legend-dot seg-both"></span>Ambele</span>
-      </div>
+    <div class="stats-month-nav">
+      <button class="date-nav-btn" onclick="changeStatsMonth(-1)">◀</button>
+      <span class="stats-month-label">${monthLabel}</span>
+      <button class="date-nav-btn" onclick="changeStatsMonth(1)"${isCurrentMonth ? ' disabled style="opacity:0.3"' : ''}>▶</button>
     </div>
-
-    <div class="chart-card" data-chart-id="feeding-intervals">
-      <div class="chart-title">Intervale hrănire (minute) / zi</div>
-      ${renderLineChart(feeding)}
-      <div class="chart-note">Punctele arată media intervalului dintre hrăniri pentru fiecare zi.</div>
+    <div class="chart-card">
+      <div class="chart-title">🍼 Ml formulă / zi</div>
+      ${renderMonthlyBarChart(mlData, isCurrentMonth)}
     </div>
-
-    <div class="chart-card" data-chart-id="sleep-hours">
-      <div class="chart-title">Somn total / zi (zi vs noapte)</div>
-      ${renderStackedBarChart(sleep, ['day', 'night'], ['seg-wet', 'seg-both'], 'dayLabel')}
-      <div class="chart-legend">
-        <span><span class="legend-dot seg-wet"></span>Zi</span>
-        <span><span class="legend-dot seg-both"></span>Noapte</span>
-      </div>
-      <div class="chart-note">Somnul apare după ce adăugăm loguri de tip sleep (Milestone următor).</div>
+    <div class="chart-card">
+      <div class="chart-title">💩 Scaune / zi</div>
+      ${renderMonthlyBarChart(stoolData, isCurrentMonth)}
     </div>
   `;
 }
@@ -1294,7 +1386,6 @@ function refreshReport() {
   const meals   = entries.filter(e => e.type === 'meal');
   const urines  = entries.filter(e => e.type === 'urine');
   const stools  = entries.filter(e => e.type === 'stool');
-  const temps   = entries.filter(e => e.type === 'temperature');
   const meds    = entries.filter(e => e.type === 'medication');
   const totalMl = meals.filter(m => m.milkType === 'formula').reduce((s, m) => s + (m.ml || 0), 0);
   const breast  = meals.filter(m => m.milkType === 'breast').length;
@@ -1310,22 +1401,22 @@ function refreshReport() {
     <div class="stat-card">
       <div class="stat-label">🍼 Hrăniri</div>
       <div class="stat-value">${meals.length}</div>
-      <div class="stat-sub">${totalMl > 0 ? totalMl + ' ml' : ''}${breast > 0 ? (totalMl > 0 ? ' + ' : '') + breast + ' alăptări' : ''}</div>
+      <div class="stat-sub">${totalMl > 0 ? totalMl + ' ml' : ''}${breast > 0 ? (totalMl > 0 ? ' + ' : '') + breast + ' alăpt.' : ''}</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">💧 Pipi</div>
       <div class="stat-value">${urines.length}</div>
-      <div class="stat-sub">${urines.map(u => urineColorLabel(u.color)).slice(0,3).join(', ') || '—'}</div>
+      <div class="stat-sub">${urines.map(u => urineColorLabel(u.color)).slice(0,2).join(', ') || '—'}</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">💩 Caca</div>
       <div class="stat-value">${stools.length}</div>
-      <div class="stat-sub">${stools.map(s => stoolColorLabel(s.color)).slice(0,3).join(', ') || '—'}</div>
+      <div class="stat-sub">${stools.map(s => stoolColorLabel(s.color)).slice(0,2).join(', ') || '—'}</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">🌡️ Temp / 💊 Med</div>
-      <div class="stat-value">${temps.length} / ${meds.length}</div>
-      <div class="stat-sub">${temps.length ? `max ${Math.max(...temps.map(t => t.valueC || 0)).toFixed(1)}°C` : 'fără temperatură'}</div>
+      <div class="stat-label">💊 Medicație</div>
+      <div class="stat-value">${meds.length}</div>
+      <div class="stat-sub">${meds.length ? (meds[0].name || '') : 'niciuna'}</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">⏱️ Interval mediu</div>
@@ -1339,24 +1430,37 @@ function refreshReport() {
     : 'Bebeluș';
 
   const sections = [
-    { label: '🍼 Hrăniri', items: meals },
-    { label: '💧 Pipi',    items: urines },
-    { label: '💩 Caca',    items: stools },
-    { label: '🌡️ Temperatură', items: temps },
-    { label: '💊 Medicație', items: meds },
+    { id: 'acc-meals',  label: '🍼 Hrăniri',  items: meals  },
+    { id: 'acc-urines', label: '💧 Pipi',      items: urines },
+    { id: 'acc-stools', label: '💩 Caca',      items: stools },
+    { id: 'acc-meds',   label: '💊 Medicație', items: meds   },
   ];
 
   document.getElementById('report-entries').innerHTML =
     sections.map(sec => `
-      <div class="report-section">
-        <div class="report-section-title">${sec.label} (${sec.items.length})</div>
-        <div class="entries-list">
-          ${sec.items.length === 0
-            ? '<p class="empty-state" style="padding:10px 0">Nicio înregistrare</p>'
-            : sec.items.sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp)).map(e => entryHTMLFlat(e)).join('')}
+      <div class="acc-section">
+        <button class="acc-header" onclick="toggleAccordion('${sec.id}')">
+          <span class="acc-title">${sec.label}</span>
+          <span class="acc-count">${sec.items.length}</span>
+          <span class="acc-chevron" id="chevron-${sec.id}">▼</span>
+        </button>
+        <div class="acc-body hidden" id="${sec.id}">
+          <div class="entries-list">
+            ${sec.items.length === 0
+              ? '<p class="empty-state" style="padding:10px 0">Nicio înregistrare</p>'
+              : sec.items.sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp)).map(e => entryHTMLFlat(e)).join('')}
+          </div>
         </div>
       </div>`).join('')
-    + `<p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:8px">${babyInfo} · ${dateStr}</p>`;
+    + `<p style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:12px">${babyInfo} · ${dateStr}</p>`;
+}
+
+function toggleAccordion(id) {
+  const body = document.getElementById(id);
+  const chevron = document.getElementById(`chevron-${id}`);
+  if (!body) return;
+  body.classList.toggle('hidden');
+  if (chevron) chevron.textContent = body.classList.contains('hidden') ? '▼' : '▲';
 }
 
 function avgInterval(meals) {
@@ -1958,12 +2062,35 @@ function evaluateVitaminDReminder(cfg) {
 }
 
 function evaluateVaccineDueReminder(cfg) {
+  refreshVaccineBanner();
   if (!cfg?.enabled) return;
   const dueSoon = getVaccinesDueSoon(Number(cfg.daysAhead || 30));
   if (!dueSoon.length) return;
   const msg = `Ai ${dueSoon.length} vaccin(uri) scadente în următoarele ${Number(cfg.daysAhead || 30)} zile.`;
   if (!canUseBrowserNotifications()) showNotificationFallback(msg);
   notifyOncePerHour('vaccine-due', '💉 RoBby – Vaccin scadent curând', msg);
+}
+
+// ─── NAV SUBMENUS ────────────────────────────────────────────
+function toggleNavSubmenu(name) {
+  const panel = document.getElementById(`nav-submenu-${name}`);
+  if (!panel) return;
+  const isOpen = !panel.classList.contains('hidden');
+  closeNavSubmenu();
+  if (!isOpen) {
+    panel.classList.remove('hidden');
+    document.getElementById(`nav-btn-${name}`)?.classList.add('active');
+  }
+}
+
+function closeNavSubmenu() {
+  document.querySelectorAll('.nav-submenu').forEach(m => m.classList.add('hidden'));
+  document.querySelectorAll('.nav-btn[data-group]').forEach(b => {
+    // Only remove active if we're not on a screen belonging to that group
+    const group = b.dataset.group;
+    const screens = group === 'copil' ? NAV_COPIL_SCREENS : NAV_INFO_SCREENS;
+    if (!screens.includes(state.currentScreen)) b.classList.remove('active');
+  });
 }
 
 function triggerNotification() {
