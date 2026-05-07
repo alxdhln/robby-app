@@ -85,11 +85,11 @@
           </div>
           <div class="stats-pill s-urine">
             <span class="stats-num" id="today-urines">0</span>
-            <span class="stats-lbl">💧 Pipi</span>
+            <span class="stats-lbl">💧 Treabă mică</span>
           </div>
           <div class="stats-pill s-stool">
             <span class="stats-num" id="today-stools">0</span>
-            <span class="stats-lbl">💩 Caca</span>
+            <span class="stats-lbl">💩 Treabă mare</span>
           </div>
         </div>
 
@@ -161,7 +161,7 @@
     <!-- ══════════════ PIPI (Urine) ══════════════ -->
     <div id="screen-urine" class="screen">
       <div class="screen-content">
-        <h2 class="screen-title">💧 Pipi</h2>
+        <h2 class="screen-title">💧 Treabă mică</h2>
         <div class="card form-card">
           <div class="form-group">
             <label>Data și ora</label>
@@ -200,7 +200,7 @@
     <!-- ══════════════ CACA (Stool) ══════════════ -->
     <div id="screen-stool" class="screen">
       <div class="screen-content">
-        <h2 class="screen-title">💩 Caca</h2>
+        <h2 class="screen-title">💩 Treabă mare</h2>
         <div class="card form-card">
           <div class="form-group">
             <label>Data și ora</label>
@@ -309,14 +309,17 @@
             <label>Greutate (kg)</label>
             <input type="number" id="growth-weight" class="input" min="1" max="20" step="0.01" placeholder="ex: 4.25">
           </div>
-          <div class="form-group">
-            <label>Înălțime (cm)</label>
-            <input type="number" id="growth-height" class="input" min="30" max="120" step="0.1" placeholder="ex: 54.2">
-          </div>
-          <div class="form-group">
-            <label>Perimetru cranian (cm)</label>
-            <input type="number" id="growth-head" class="input" min="20" max="70" step="0.1" placeholder="ex: 36.0">
-          </div>
+          <details id="growth-extra-details" class="growth-extra-details">
+            <summary class="growth-extra-summary">+ Adaugă înălțime / perimetru cranian</summary>
+            <div class="form-group" style="margin-top:14px">
+              <label>Înălțime (cm)</label>
+              <input type="number" id="growth-height" class="input" min="30" max="120" step="0.1" placeholder="ex: 54.2">
+            </div>
+            <div class="form-group">
+              <label>Perimetru cranian (cm)</label>
+              <input type="number" id="growth-head" class="input" min="20" max="70" step="0.1" placeholder="ex: 36.0">
+            </div>
+          </details>
           <button class="btn-primary btn-full" onclick="saveGrowthRecord()">✓ Salvează măsurarea</button>
         </div>
         <div id="growth-insight" class="chart-note"></div>
@@ -533,11 +536,11 @@
       </button>
       <button class="nav-sub-item" onclick="showScreen('urine'); closeNavSubmenu()">
         <span class="nav-sub-icon">💧</span>
-        <span class="nav-sub-label">Pipi</span>
+        <span class="nav-sub-label">Treabă mică</span>
       </button>
       <button class="nav-sub-item" onclick="showScreen('stool'); closeNavSubmenu()">
         <span class="nav-sub-icon">💩</span>
-        <span class="nav-sub-label">Caca</span>
+        <span class="nav-sub-label">Treabă mare</span>
       </button>
       <button class="nav-sub-item" onclick="showScreen('medication'); closeNavSubmenu()">
         <span class="nav-sub-icon">💊</span>
@@ -596,8 +599,8 @@
     <h3 id="modal-title"></h3>
     <p id="modal-message"></p>
     <div class="modal-buttons">
-      <button class="btn-secondary" onclick="closeModal()">Anulare</button>
-      <button class="btn-danger" id="modal-confirm-btn">Confirmare</button>
+      <button class="btn-secondary" onclick="closeModal()">Anulează</button>
+      <button class="btn-danger" id="modal-confirm-btn">Da</button>
     </div>
   </div>
 </div>

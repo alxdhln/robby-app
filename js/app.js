@@ -624,12 +624,12 @@ function entryHTML(e) {
   } else if (e.type === 'urine') {
     typeClass = 'type-urine';
     dot   = '💧';
-    title  = `Pipi · ${urineColorLabel(e.color)}`;
+    title  = `Treabă mică · ${urineColorLabel(e.color)}`;
     detail = e.notes || '';
   } else if (e.type === 'stool') {
     typeClass = 'type-stool';
     dot   = '💩';
-    title  = `Caca · ${stoolColorLabel(e.color)}`;
+    title  = `Treabă mare · ${stoolColorLabel(e.color)}`;
     detail = stoolAspectLabel(e.aspect) + (e.notes ? ' · ' + e.notes : '');
   } else if (e.type === 'temperature') {
     typeClass = 'type-temperature';
@@ -676,11 +676,11 @@ function entryHTMLFlat(e) {
     if (e.notes) detail += ' · ' + e.notes;
   } else if (e.type === 'urine') {
     emoji  = '💧';
-    title  = `Pipi · ${urineColorLabel(e.color)}`;
+    title  = `Treabă mică · ${urineColorLabel(e.color)}`;
     detail = e.notes || '';
   } else if (e.type === 'stool') {
     emoji  = '💩';
-    title  = `Caca · ${stoolColorLabel(e.color)} · ${stoolAspectLabel(e.aspect)}`;
+    title  = `Treabă mare · ${stoolColorLabel(e.color)} · ${stoolAspectLabel(e.aspect)}`;
     detail = e.notes || '';
   } else if (e.type === 'temperature') {
     emoji = '🌡️';
@@ -708,11 +708,19 @@ function stoolColorLabel(c)  { return { yellow:'Galben', green:'Verde', brown:'M
 function stoolAspectLabel(a) { return { normal:'Normal', liquid:'Lichid', hard:'Tare', mucus:'Cu mucus' }[a] || a; }
 
 function confirmDelete(id) {
-  showModal('Șterge înregistrarea', 'Ești sigur că vrei să ștergi această înregistrare?', () => {
+  showModal('Șterge înregistrarea', 'Ștergi această înregistrare?', () => {
     deleteEntry(id);
     showToast('Înregistrare ștearsă');
     if (state.currentScreen === 'home')   refreshHome();
     if (state.currentScreen === 'report') refreshReport();
+  });
+}
+
+function deleteGrowthRecord(id) {
+  showModal('Șterge măsurătoarea', 'Ștergi această măsurătoare?', () => {
+    saveGrowthRecords(loadGrowthRecords().filter(r => r.id !== id));
+    showToast('Măsurare ștearsă');
+    refreshGrowth();
   });
 }
 
@@ -797,7 +805,7 @@ function saveUrine() {
   if (!ts) { showToast('Selectați data și ora'); return; }
   const notes = document.getElementById('urine-notes').value.trim();
   addEntry({ type: 'urine', timestamp: ts, color: state.urineColor, ...(notes && { notes }) });
-  showToast('✓ Pipi salvat!');
+  showToast('✓ Treabă mică salvată!');
   showScreen('home');
 }
 
@@ -830,7 +838,7 @@ function saveStool() {
   if (['red','white','black'].includes(color)) {
     showToast('⚠️ Culoare neobișnuită! Consultați medicul.', 4000);
   } else {
-    showToast('✓ Caca salvată!');
+    showToast('✓ Treabă mare salvată!');
   }
   showScreen('home');
 }
@@ -1057,6 +1065,16 @@ function getMonthlyMlData(year, month) {
   });
 }
 
+function getMonthlyUrineData(year, month) {
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+  return Array.from({length: daysInMonth}, (_, i) => {
+    const date = new Date(year, month, i + 1);
+    if (date > today) return { day: i + 1, value: 0 };
+    return { day: i + 1, value: getEntriesForDate(date).filter(e => e.type === 'urine').length };
+  });
+}
+
 function getMonthlyStoolData(year, month) {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const today = new Date();
@@ -1100,6 +1118,7 @@ function buildStatisticsMarkup() {
   const isCurrentMonth = now.getFullYear() === year && now.getMonth() === month;
 
   const mlData    = getMonthlyMlData(year, month);
+  const urineData = getMonthlyUrineData(year, month);
   const stoolData = getMonthlyStoolData(year, month);
 
   return `
@@ -1111,6 +1130,10 @@ function buildStatisticsMarkup() {
     <div class="chart-card">
       <div class="chart-title">🍼 Ml formulă / zi</div>
       ${renderMonthlyBarChart(mlData, isCurrentMonth)}
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">💧 Treabă mică / zi</div>
+      ${renderMonthlyBarChart(urineData, isCurrentMonth)}
     </div>
     <div class="chart-card">
       <div class="chart-title">💩 Scaune / zi</div>
@@ -1175,27 +1198,30 @@ function initGrowthForm() {
   document.getElementById('growth-weight').value = '';
   document.getElementById('growth-height').value = '';
   document.getElementById('growth-head').value = '';
+  const details = document.getElementById('growth-extra-details');
+  if (details) details.removeAttribute('open');
 }
 
 function saveGrowthRecord() {
   const date = document.getElementById('growth-date').value;
   const weightKg = parseFloat(document.getElementById('growth-weight').value);
-  const heightCm = parseFloat(document.getElementById('growth-height').value);
-  const headCm = parseFloat(document.getElementById('growth-head').value);
   if (!date) { showToast('Selectați data'); return; }
-  if (![weightKg, heightCm, headCm].every(Number.isFinite)) {
-    showToast('Completați toate măsurătorile');
-    return;
-  }
-  const records = loadGrowthRecords();
-  records.push({
+  if (!Number.isFinite(weightKg)) { showToast('Introduceți greutatea'); return; }
+
+  const heightVal = parseFloat(document.getElementById('growth-height').value);
+  const headVal   = parseFloat(document.getElementById('growth-head').value);
+
+  const record = {
     id: 'g_' + Date.now().toString(36),
     babyId: state.activeBabyId || getActiveBabyId(),
     date,
     weightKg: Number(weightKg.toFixed(2)),
-    heightCm: Number(heightCm.toFixed(1)),
-    headCm: Number(headCm.toFixed(1)),
-  });
+  };
+  if (Number.isFinite(heightVal)) record.heightCm = Number(heightVal.toFixed(1));
+  if (Number.isFinite(headVal))   record.headCm   = Number(headVal.toFixed(1));
+
+  const records = loadGrowthRecords();
+  records.push(record);
   saveGrowthRecords(records);
   showToast('✓ Măsurare salvată');
   refreshGrowth();
@@ -1208,7 +1234,7 @@ function renderGrowthChart(metricKey, label, unit, valueAccessor) {
   const pad = 24;
   const months = [...Array(13).keys()];
   const curves = WHO_GROWTH[metricKey];
-  const allVals = [...months.flatMap(m => [curves.p3[m], curves.p97[m]]), ...records.map(valueAccessor)];
+  const allVals = [...months.flatMap(m => [curves.p3[m], curves.p97[m]]), ...records.map(valueAccessor).filter(v => Number.isFinite(v))];
   const minV = Math.min(...allVals) - 0.3;
   const maxV = Math.max(...allVals) + 0.3;
   const xForMonth = m => pad + (m / 12) * (width - pad * 2);
@@ -1248,10 +1274,12 @@ function refreshGrowthInsight() {
   }
   const last = records[records.length - 1];
   const month = ageMonthsForRecord(last.date) || 0;
-  const weightBand = percentileBandForValue('weightKg', month, Number(last.weightKg));
-  const heightBand = percentileBandForValue('heightCm', month, Number(last.heightCm));
-  const headBand = percentileBandForValue('headCm', month, Number(last.headCm));
-  insight.textContent = `Ultima măsurare (${last.date}): Greutate ${weightBand}, Înălțime ${heightBand}, Perimetru cranian ${headBand}.`;
+  const parts = [`Greutate ${percentileBandForValue('weightKg', month, Number(last.weightKg))}`];
+  if (Number.isFinite(Number(last.heightCm)))
+    parts.push(`Înălțime ${percentileBandForValue('heightCm', month, Number(last.heightCm))}`);
+  if (Number.isFinite(Number(last.headCm)))
+    parts.push(`Perimetru cranian ${percentileBandForValue('headCm', month, Number(last.headCm))}`);
+  insight.textContent = `Ultima măsurare (${fmtDMY(last.date)}): ${parts.join(', ')}.`;
 }
 
 function refreshGrowth() {
@@ -1259,12 +1287,22 @@ function refreshGrowth() {
   const container = document.getElementById('growth-charts');
   if (!container) return;
   const records = getGrowthRecordsForActiveBaby();
+  const hasHeight = records.some(r => Number.isFinite(Number(r.heightCm)));
+  const hasHead   = records.some(r => Number.isFinite(Number(r.headCm)));
   container.innerHTML = `
     ${renderGrowthChart('weightKg', 'Greutate în timp', 'kg', r => Number(r.weightKg))}
-    ${renderGrowthChart('heightCm', 'Înălțime în timp', 'cm', r => Number(r.heightCm))}
-    ${renderGrowthChart('headCm', 'Perimetru cranian în timp', 'cm', r => Number(r.headCm))}
+    ${hasHeight ? renderGrowthChart('heightCm', 'Înălțime în timp', 'cm', r => Number(r.heightCm)) : ''}
+    ${hasHead   ? renderGrowthChart('headCm', 'Perimetru cranian în timp', 'cm', r => Number(r.headCm)) : ''}
     <div class="growth-list">
-      ${records.slice().reverse().map(r => `<div class="growth-row">${r.date} · ${r.weightKg}kg · ${r.heightCm}cm · PC ${r.headCm}cm</div>`).join('')}
+      ${records.slice().reverse().map(r => {
+        const parts = [fmtDMY(r.date), `${r.weightKg} kg`];
+        if (r.heightCm != null) parts.push(`${r.heightCm} cm`);
+        if (r.headCm   != null) parts.push(`PC ${r.headCm} cm`);
+        return `<div class="growth-row">
+          <span class="growth-row-text">${parts.join(' · ')}</span>
+          <button class="tl-delete" onclick="deleteGrowthRecord('${r.id}')" title="Șterge">🗑</button>
+        </div>`;
+      }).join('')}
     </div>
   `;
   refreshGrowthInsight();
@@ -1328,11 +1366,12 @@ function openVaccineMarkDone(scheduleId) {
 }
 
 function clearVaccineDone(scheduleId) {
-  const activeId = state.activeBabyId || getActiveBabyId();
-  const next = loadVaccineRecords().filter(r => !(r.babyId === activeId && r.scheduleId === scheduleId));
-  saveVaccineRecords(next);
-  showToast('Vaccin marcat ca upcoming');
-  refreshVaccines();
+  showModal('Anulează vaccinul', 'Ștergi înregistrarea acestui vaccin?', () => {
+    const activeId = state.activeBabyId || getActiveBabyId();
+    saveVaccineRecords(loadVaccineRecords().filter(r => !(r.babyId === activeId && r.scheduleId === scheduleId)));
+    showToast('Înregistrare vaccin ștearsă');
+    refreshVaccines();
+  });
 }
 
 function refreshVaccines() {
@@ -1404,12 +1443,12 @@ function refreshReport() {
       <div class="stat-sub">${totalMl > 0 ? totalMl + ' ml' : ''}${breast > 0 ? (totalMl > 0 ? ' + ' : '') + breast + ' alăpt.' : ''}</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">💧 Pipi</div>
+      <div class="stat-label">💧 Treabă mică</div>
       <div class="stat-value">${urines.length}</div>
       <div class="stat-sub">${urines.map(u => urineColorLabel(u.color)).slice(0,2).join(', ') || '—'}</div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">💩 Caca</div>
+      <div class="stat-label">💩 Treabă mare</div>
       <div class="stat-value">${stools.length}</div>
       <div class="stat-sub">${stools.map(s => stoolColorLabel(s.color)).slice(0,2).join(', ') || '—'}</div>
     </div>
@@ -1431,8 +1470,8 @@ function refreshReport() {
 
   const sections = [
     { id: 'acc-meals',  label: '🍼 Hrăniri',  items: meals  },
-    { id: 'acc-urines', label: '💧 Pipi',      items: urines },
-    { id: 'acc-stools', label: '💩 Caca',      items: stools },
+    { id: 'acc-urines', label: '💧 Treabă mică',      items: urines },
+    { id: 'acc-stools', label: '💩 Treabă mare',      items: stools },
     { id: 'acc-meds',   label: '💊 Medicație', items: meds   },
   ];
 
@@ -1535,9 +1574,9 @@ function buildPdfDiaperChartImg() {
   const legY = CH - 6;
   ctx.fillStyle = '#8ec5ff'; ctx.fillRect(PL, legY - 13, 13, 13);
   ctx.fillStyle = '#333333'; ctx.font = '11px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('Pipi (umed)', PL + 16, legY);
+  ctx.fillText('Treabă mică', PL + 16, legY);
   ctx.fillStyle = '#d7b48b'; ctx.fillRect(PL + 108, legY - 13, 13, 13);
-  ctx.fillStyle = '#333333'; ctx.fillText('Caca (murdar)', PL + 124, legY);
+  ctx.fillStyle = '#333333'; ctx.fillText('Treabă mare', PL + 124, legY);
   return c.toDataURL('image/png');
 }
 
@@ -1762,8 +1801,8 @@ async function exportPrint() {
     doc.rect(8, y, pageW - 16, 20, 'F');
     doc.setFontSize(9.5);
     doc.text(`Hraniri: ${meals.length}  (${totalMl} ml formula)`, 12, y + 6);
-    doc.text(`Pipi: ${urines.length}`, 90, y + 6);
-    doc.text(`Caca: ${stools.length}`, 130, y + 6);
+    doc.text(`Tr. mică: ${urines.length}`, 90, y + 6);
+    doc.text(`Tr. mare: ${stools.length}`, 130, y + 6);
     doc.text(`Temperaturi: ${temps.length}`, 12, y + 15);
     doc.text(`Medicatii: ${meds.length}`, 90, y + 15);
     y += 26;
@@ -1793,9 +1832,9 @@ async function exportPrint() {
         line = `${formatTime(e.timestamp)}  Hranire - ${qty}`;
         if (e.notes) line += `  (${e.notes.slice(0, 50)})`;
       } else if (e.type === 'urine') {
-        line = `${formatTime(e.timestamp)}  Pipi - ${urineColorLabel(e.color)}`;
+        line = `${formatTime(e.timestamp)}  Treabă mică - ${urineColorLabel(e.color)}`;
       } else if (e.type === 'stool') {
-        line = `${formatTime(e.timestamp)}  Caca - ${stoolColorLabel(e.color)}, ${stoolAspectLabel(e.aspect || 'normal')}`;
+        line = `${formatTime(e.timestamp)}  Treabă mare - ${stoolColorLabel(e.color)}, ${stoolAspectLabel(e.aspect || 'normal')}`;
       } else if (e.type === 'temperature') {
         line = `${formatTime(e.timestamp)}  Temperatura - ${Number(e.valueC).toFixed(1)} C`;
         if (e.notes) line += `  (${e.notes.slice(0, 40)})`;
