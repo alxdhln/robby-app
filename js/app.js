@@ -417,6 +417,22 @@ function showToast(msg, dur = 2500) {
   toastTimer = setTimeout(() => t.classList.add('hidden'), dur);
 }
 
+let warnToastTimer;
+function showWarnToast(msg, level = 'warn') {
+  const t = document.getElementById('toast-warn');
+  if (!t) return;
+  clearTimeout(warnToastTimer);
+  t.textContent = msg;
+  t.className = `toast-warn toast-warn--${level}`;
+  warnToastTimer = setTimeout(() => dismissWarnToast(), 4000);
+}
+function dismissWarnToast() {
+  const t = document.getElementById('toast-warn');
+  if (!t) return;
+  clearTimeout(warnToastTimer);
+  t.classList.add('hidden');
+}
+
 function showModal(title, msg, onConfirm) {
   document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-message').textContent = msg;
@@ -763,7 +779,20 @@ function entryHTMLFlat(e) {
   </div>`;
 }
 
-function urineColorLabel(c)  { return { clear:'Clară', yellow:'Galbenă', dark:'Închisă' }[c] || c; }
+function urineColorLabel(c)  {
+  return {
+    light_yellow: 'Galbenă deschis',
+    yellow:       'Galbenă',
+    dark_yellow:  'Galbenă închis',
+    orange:       'Portocalie',
+    pink:         'Roz / Roșiatică',
+    colorless:    'Incoloră',
+    dark_brown:   'Maro închis',
+    // legacy values
+    clear:        'Clară',
+    dark:         'Închisă',
+  }[c] || c;
+}
 function stoolColorLabel(c)  { return { yellow:'Galben', green:'Verde', brown:'Maro', black:'Negru', red:'Roșu ⚠️', white:'Alb ⚠️' }[c] || c; }
 function stoolAspectLabel(a) { return { normal:'Normal', liquid:'Lichid', hard:'Tare', mucus:'Cu mucus' }[a] || a; }
 
@@ -853,6 +882,52 @@ function updateFormulaClearBtn() {
   btn.style.display = (el?.value || '') ? 'flex' : 'none';
 }
 
+// ── Settings formula brand (mirrors Feeding page behaviour) ──
+function onStgFormulaBrandClick() {
+  const el = document.getElementById('setting-formula');
+  if (!el) return;
+  if (el.value && !el.dataset.savedBrand) {
+    el.dataset.savedBrand = el.value;
+    el.value = '';
+  }
+}
+
+function onStgFormulaBrandBlur() {
+  const el = document.getElementById('setting-formula');
+  if (!el) return;
+  if (!el.value && el.dataset.savedBrand) el.value = el.dataset.savedBrand;
+  el.dataset.savedBrand = '';
+  _updateStgFormulaClearBtn();
+  // Persist and sync to Feeding page
+  settings.formula = el.value.trim() || 'NAN Supreme Pro 1';
+  saveSettingsToStorage(settings);
+  // Pre-fill Feeding page if it's already initialised
+  const mealEl = document.getElementById('meal-formula');
+  if (mealEl && !mealEl.dataset.savedBrand) mealEl.value = settings.formula;
+}
+
+function onStgFormulaBrandInput() {
+  const el = document.getElementById('setting-formula');
+  if (el) el.dataset.savedBrand = '';
+  _updateStgFormulaClearBtn();
+}
+
+function clearStgFormulaBrand() {
+  const el = document.getElementById('setting-formula');
+  if (!el) return;
+  el.dataset.savedBrand = '';
+  el.value = '';
+  el.focus();
+  _updateStgFormulaClearBtn();
+}
+
+function _updateStgFormulaClearBtn() {
+  const el  = document.getElementById('setting-formula');
+  const btn = document.getElementById('stg-formula-clear-btn');
+  if (!btn) return;
+  btn.style.display = (el?.value || '') ? 'flex' : 'none';
+}
+
 function initMealForm() {
   setFormNow('meal');
   document.getElementById('meal-notes').value = '';
@@ -913,26 +988,71 @@ function saveMeal() {
 }
 
 // ─── PIPI FORM ───────────────────────────────────────────────
+const URINE_COLOR_SHORT = {
+  light_yellow: '💛 Galbenă deschis',
+  yellow:       '🟡 Galbenă',
+  dark_yellow:  '🟠 Galbenă închis',
+  orange:       '🟠 Portocalie',
+  pink:         '🔴 Roz / Roșiatică',
+  colorless:    '⚪ Incoloră',
+  dark_brown:   '🟫 Maro închis',
+};
+const URINE_COLOR_FULL = {
+  light_yellow: '💛 Galbenă deschis',
+  yellow:       '🟡 Galbenă',
+  dark_yellow:  '🟠 Galbenă închis',
+  orange:       '🟠 Portocalie',
+  pink:         '🔴 Roz / Roșiatică',
+  colorless:    '⚪ Incoloră',
+  dark_brown:   '🟫 Maro închis',
+};
+
+function restoreUrineColorOptions() {
+  const sel = document.getElementById('urine-color-select');
+  if (!sel) return;
+  sel.querySelectorAll('option').forEach(opt => {
+    opt.textContent = URINE_COLOR_FULL[opt.value] || opt.textContent;
+  });
+}
+
+function _collapseUrineColorOption(val) {
+  const sel = document.getElementById('urine-color-select');
+  if (!sel) return;
+  const opt = sel.querySelector(`option[value="${val}"]`);
+  if (opt) opt.textContent = URINE_COLOR_SHORT[val] || opt.textContent;
+}
+
 function initUrineForm() {
   setFormNow('urine');
   document.getElementById('urine-notes').value = '';
-  state.urineColor = 'clear';
-  document.querySelectorAll('#screen-urine .color-btn').forEach(b => b.classList.remove('active'));
-  const first = document.querySelector('#screen-urine .color-btn[data-value="clear"]');
-  if (first) first.classList.add('active');
+  state.urineColor = 'light_yellow';
+  const sel = document.getElementById('urine-color-select');
+  if (sel) sel.value = 'light_yellow';
+  _collapseUrineColorOption('light_yellow');
 }
 
-function selectUrineColor(btn, val) {
+function onUrineColorChange(val) {
   state.urineColor = val;
-  document.querySelectorAll('#screen-urine .color-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  _collapseUrineColorOption(val);
+  const WARN_COLORS = {
+    dark_yellow: { level: 'warn',   msg: 'Galbenă închis — posibil deshidratare. Consultați medicul dacă această culoare persistă.' },
+    orange:      { level: 'warn',   msg: 'Portocalie — consultați medicul dacă această culoare persistă.' },
+    pink:        { level: 'urgent', msg: 'Roz / Roșiatică — consultați medicul urgent.' },
+    dark_brown:  { level: 'urgent', msg: 'Maro închis — consultați medicul urgent.' },
+  };
+  const w = WARN_COLORS[val];
+  if (w) showWarnToast(w.msg, w.level);
+  else   dismissWarnToast();
 }
 
 function saveUrine() {
   const ts = getFormDateTime('urine');
   if (!ts) { showToast('Selectați data și ora'); return; }
+  const sel   = document.getElementById('urine-color-select');
+  const color = sel ? sel.value : state.urineColor;
   const notes = document.getElementById('urine-notes').value.trim();
-  addEntry({ type: 'urine', timestamp: ts, color: state.urineColor, ...(notes && { notes }) });
+  addEntry({ type: 'urine', timestamp: ts, color, ...(notes && { notes }) });
+  dismissWarnToast();
   showToast('✓ Treabă mică salvată!');
   showScreen('home');
 }
@@ -2443,7 +2563,14 @@ function loadSettingsForm() {
   selectGender(baby?.gender || 'boy');
 
   // Formula / feeding
-  document.getElementById('setting-formula').value  = settings.formula || 'NAN Supreme Pro 1';
+  const stgDl = document.getElementById('stg-formula-brands-list');
+  if (stgDl) stgDl.innerHTML = FORMULA_BRANDS.map(b => `<option value="${b}">`).join('');
+  const stgFormulaEl = document.getElementById('setting-formula');
+  if (stgFormulaEl) {
+    stgFormulaEl.value = settings.formula || 'NAN Supreme Pro 1';
+    stgFormulaEl.dataset.savedBrand = '';
+  }
+  _updateStgFormulaClearBtn();
   document.getElementById('setting-interval').value = settings.customInterval || '';
 
   // Notifications

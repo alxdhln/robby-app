@@ -180,20 +180,18 @@
           </div>
           <div class="form-group">
             <label>Culoare</label>
-            <div class="color-options">
-              <button class="color-btn active" data-value="clear" onclick="selectUrineColor(this,'clear')">
-                <div class="color-dot" style="background:#fffde7;border:2px solid #ccc"></div>
-                <span>Clară</span>
-              </button>
-              <button class="color-btn" data-value="yellow" onclick="selectUrineColor(this,'yellow')">
-                <div class="color-dot" style="background:#FFD700"></div>
-                <span>Galbenă</span>
-              </button>
-              <button class="color-btn" data-value="dark" onclick="selectUrineColor(this,'dark')">
-                <div class="color-dot" style="background:#B8860B"></div>
-                <span>Închisă</span>
-              </button>
-            </div>
+            <select id="urine-color-select" class="input"
+                    onmousedown="restoreUrineColorOptions()"
+                    onfocus="restoreUrineColorOptions()"
+                    onchange="onUrineColorChange(this.value)">
+              <option value="light_yellow">💛 Galbenă deschis</option>
+              <option value="yellow">🟡 Galbenă</option>
+              <option value="dark_yellow">🟠 Galbenă închis</option>
+              <option value="orange">🟠 Portocalie</option>
+              <option value="pink">🔴 Roz / Roșiatică</option>
+              <option value="colorless">⚪ Incoloră</option>
+              <option value="dark_brown">🟫 Maro închis</option>
+            </select>
           </div>
           <div class="form-group">
             <label>Observații (opțional)</label>
@@ -432,10 +430,21 @@
 
           <div class="stg-divider"></div>
           <!-- Formula brand -->
-          <div class="stg-row">
+          <div class="stg-row stg-row-tall">
             <span class="stg-row-icon">🥤</span>
-            <span class="stg-row-label">Formulă lapte implicită</span>
-            <input type="text" id="setting-formula" class="stg-inline-input" placeholder="NAN Supreme Pro 1" onchange="saveSettings()">
+            <div class="stg-row-body">
+              <span class="stg-row-label">Formulă lapte implicită</span>
+              <div class="formula-input-wrapper">
+                <input type="text" id="setting-formula" class="input" list="stg-formula-brands-list"
+                       placeholder="Caută sau scrie marca…" autocomplete="off"
+                       onclick="onStgFormulaBrandClick()"
+                       onblur="onStgFormulaBrandBlur()"
+                       oninput="onStgFormulaBrandInput()">
+                <button type="button" class="formula-clear-btn" id="stg-formula-clear-btn"
+                        onclick="clearStgFormulaBrand()" style="display:none">✕</button>
+                <datalist id="stg-formula-brands-list"></datalist>
+              </div>
+            </div>
           </div>
           <div class="stg-divider"></div>
           <!-- Custom interval -->
@@ -683,6 +692,7 @@
 
 <!-- Toast -->
 <div id="toast" class="toast hidden"></div>
+<div id="toast-warn" class="toast-warn hidden" onclick="dismissWarnToast()"></div>
 <div id="pdf-progress" class="pdf-progress hidden"></div>
 
 <!-- Modal -->

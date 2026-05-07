@@ -1162,6 +1162,43 @@ body { overflow: hidden; }
   box-shadow: 0 4px 16px rgba(0,0,0,0.2);
 }
 .toast.hidden { opacity: 0; pointer-events: none; }
+
+.toast-warn {
+  position: fixed;
+  bottom: calc(var(--nav-height) + 14px);
+  left: 50%;
+  transform: translateX(-50%) translateY(0);
+  padding: 13px 20px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  z-index: 1001;
+  max-width: 88vw;
+  text-align: center;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.22);
+  cursor: pointer;
+  transition: opacity 0.3s, transform 0.3s;
+  white-space: normal;
+  word-break: break-word;
+}
+.toast-warn--warn {
+  background: #FFF3CD;
+  color: #7D4E00;
+  border: 1.5px solid #F5C542;
+}
+.toast-warn--urgent {
+  background: #FEE2E2;
+  color: #7F1D1D;
+  border: 1.5px solid #F87171;
+}
+.toast-warn.hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(12px);
+}
+
+
 .pdf-progress {
   position: fixed;
   top: calc(var(--header-height) + 8px);
