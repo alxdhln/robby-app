@@ -67,6 +67,9 @@ const state = {
   statsMonthOffset: 0,
 };
 
+// Window start month (0 or 6) per metric key for in-app growth charts
+const growthChartWindows = {};
+
 // ─── SETTINGS ────────────────────────────────────────────────
 const DEFAULT_SETTINGS = {
   babyName: '', birthDate: '', gender: 'boy',
@@ -635,7 +638,7 @@ function updateNextFeeding(meals) {
 
   if (meals.length === 0) {
     timeEl.textContent    = '--:--';
-    countdown.textContent = 'Adaugă prima hrănire';
+    countdown.innerHTML   = '<button class="add-first-btn" onclick="showScreen(\'meal\');closeNavSubmenu()">Adaugă</button>';
     if (progressFill) progressFill.style.width = '0%';
     document.getElementById('reminder-badge').classList.add('hidden');
     return;
@@ -1466,39 +1469,96 @@ function saveGrowthRecord() {
   refreshGrowth();
 }
 
+function growthChartNav(metricKey, dir) {
+  growthChartWindows[metricKey] = dir > 0 ? 6 : 0;
+  refreshGrowth();
+}
+
 function renderGrowthChart(metricKey, label, unit, valueAccessor) {
   const records = getGrowthRecordsForActiveBaby();
-  const width = 340;
-  const height = 180;
-  const pad = 24;
-  const months = [...Array(13).keys()];
+  const startM = growthChartWindows[metricKey] || 0;
+  const endM = startM + 6;
+
+  const width = 340, height = 210;
+  const padL = 28, padR = 10, padT = 22, padB = 26;
+  const chartW = width - padL - padR, chartH = height - padT - padB;
+
   const curves = WHO_GROWTH[metricKey];
-  const allVals = [...months.flatMap(m => [curves.p3[m], curves.p97[m]]), ...records.map(valueAccessor).filter(v => Number.isFinite(v))];
+  const visMonths = [...Array(13).keys()].filter(m => m >= startM && m <= endM);
+
+  const visWhoVals = visMonths.flatMap(m => [curves.p3[m], curves.p97[m]]);
+  const allVals = [...visWhoVals, ...records.map(valueAccessor).filter(v => Number.isFinite(v))];
   const minV = Math.min(...allVals) - 0.3;
   const maxV = Math.max(...allVals) + 0.3;
-  const xForMonth = m => pad + (m / 12) * (width - pad * 2);
-  const yForVal = v => height - pad - ((v - minV) / Math.max(0.01, maxV - minV)) * (height - pad * 2);
-  const curvePath = key => months.map((m, i) => `${i ? 'L' : 'M'} ${xForMonth(m)} ${yForVal(curves[key][m])}`).join(' ');
 
-  const points = records.map(r => {
+  const xForMonth = m => padL + ((m - startM) / 6) * chartW;
+  const yForVal = v => padT + chartH - ((v - minV) / Math.max(0.01, maxV - minV)) * chartH;
+  const curvePath = key => visMonths.map((m, i) => `${i ? 'L' : 'M'} ${xForMonth(m)} ${yForVal(curves[key][m])}`).join(' ');
+
+  // Deduplicate: keep most recent record per month, only in visible window
+  const latestByMonth = new Map();
+  records.forEach(r => {
     const month = ageMonthsForRecord(r.date);
     const value = valueAccessor(r);
-    if (!Number.isFinite(month) || !Number.isFinite(value)) return '';
-    return `<circle cx="${xForMonth(month)}" cy="${yForVal(value)}" r="3.2" fill="var(--primary-dark)" />`;
+    if (month === null || !Number.isFinite(value)) return;
+    if (month < startM || month > endM) return;
+    const ex = latestByMonth.get(month);
+    if (!ex || new Date(r.date) > new Date(ex.date)) latestByMonth.set(month, { month, value, date: r.date });
+  });
+  const dedupedPts = [...latestByMonth.values()].sort((a, b) => a.month - b.month);
+
+  // Baby line
+  let babyLine = '';
+  if (dedupedPts.length > 1) {
+    const d = dedupedPts.map((p, i) => `${i ? 'L' : 'M'} ${xForMonth(p.month)} ${yForVal(p.value)}`).join(' ');
+    babyLine = `<path d="${d}" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linejoin="round" />`;
+  }
+
+  // Data point circles + labels (alternate label above/below to avoid overlap)
+  const circles = dedupedPts.map((p, i) => {
+    const cx = xForMonth(p.month), cy = yForVal(p.value);
+    const above = (i % 2 === 0);
+    const ly = above ? Math.max(padT + 10, cy - 7) : Math.min(padT + chartH - 4, cy + 15);
+    const txt = unit === 'kg' ? p.value.toFixed(2) : p.value.toFixed(1);
+    return `<circle cx="${cx}" cy="${cy}" r="3.5" fill="var(--primary)" />
+<text x="${cx}" y="${ly}" font-size="9" font-weight="700" fill="var(--text)" text-anchor="middle">${txt}</text>`;
   }).join('');
+
+  // X axis labels (every month in window)
+  const xLabels = visMonths.map(m =>
+    `<text x="${xForMonth(m)}" y="${height - 4}" font-size="9" fill="#999" text-anchor="middle">${m}L</text>`
+  ).join('');
+
+  // Navigation: show arrows only when data exists beyond the current window
+  const maxDataMonth = records.reduce((mx, r) => Math.max(mx, ageMonthsForRecord(r.date) || 0), 0);
+  const canPrev = startM > 0;
+  const canNext = maxDataMonth > 6 && endM < 12;
+
+  const prevBtn = canPrev
+    ? `<button class="growth-nav-btn" onclick="growthChartNav('${metricKey}', -1)">&#8249;</button>`
+    : `<span class="growth-nav-placeholder"></span>`;
+  const nextBtn = canNext
+    ? `<button class="growth-nav-btn" onclick="growthChartNav('${metricKey}', 1)">&#8250;</button>`
+    : `<span class="growth-nav-placeholder"></span>`;
 
   return `
     <div class="chart-card">
       <div class="chart-title">${label}</div>
-      <svg viewBox="0 0 ${width} ${height}" class="growth-svg" preserveAspectRatio="none">
-        <path d="${curvePath('p3')}" fill="none" stroke="#f2b6b6" stroke-width="1.2" />
-        <path d="${curvePath('p15')}" fill="none" stroke="#f6d3a6" stroke-width="1.2" />
-        <path d="${curvePath('p50')}" fill="none" stroke="#9ec5ff" stroke-width="1.7" />
-        <path d="${curvePath('p85')}" fill="none" stroke="#a8d7b0" stroke-width="1.2" />
-        <path d="${curvePath('p97')}" fill="none" stroke="#9fd0d8" stroke-width="1.2" />
-        ${points}
-      </svg>
-      <div class="chart-note">Curbe WHO: P3 / P15 / P50 / P85 / P97 · unitate: ${unit}</div>
+      <div class="growth-chart-nav">
+        ${prevBtn}
+        <svg viewBox="0 0 ${width} ${height}" class="growth-svg" preserveAspectRatio="none">
+          <path d="${curvePath('p3')}"  fill="none" stroke="#f2b6b6" stroke-width="1.2" />
+          <path d="${curvePath('p15')}" fill="none" stroke="#f6d3a6" stroke-width="1.2" />
+          <path d="${curvePath('p50')}" fill="none" stroke="#9ec5ff" stroke-width="1.7" />
+          <path d="${curvePath('p85')}" fill="none" stroke="#a8d7b0" stroke-width="1.2" />
+          <path d="${curvePath('p97')}" fill="none" stroke="#9fd0d8" stroke-width="1.2" />
+          ${babyLine}
+          ${circles}
+          ${xLabels}
+        </svg>
+        ${nextBtn}
+      </div>
+      <div class="chart-note">Curbe WHO: P3 / P15 / P50 / P85 / P97 · ${unit}</div>
     </div>
   `;
 }
@@ -1921,7 +1981,7 @@ function changeReportMonth(delta) {
   refreshReportMonth();
 }
 
-// ─── PDF CHART HELPERS (Canvas 2D – no html2canvas needed) ───
+// ─── PDF CHART HELPERS (Canvas 2D) ───────────────────────────
 
 function _pdfCanvas(w, h) {
   const c = document.createElement('canvas');
@@ -1932,142 +1992,51 @@ function _pdfCanvas(w, h) {
   return { c, ctx };
 }
 
-function buildPdfUrineChartImg() {
-  const data = getLastNDates(7).map(date => ({
-    day: formatShortDay(date),
-    value: getEntriesForDate(date).filter(e => e.type === 'urine').length,
-  }));
-  const CW = 700, CH = 260;
+// Generic bar chart builder used by all 3 stat charts
+function _buildBarChartImg(title, data, barColor) {
+  const CW = 700, CH = 300;
   const { c, ctx } = _pdfCanvas(CW, CH);
-  const PL = 28, PR = 10, PT = 36, PB = 30;
-  const chartW = CW - PL - PR;
-  const chartH = CH - PT - PB;
+  const PL = 48, PR = 14, PT = 44, PB = 34;
+  const chartW = CW - PL - PR, chartH = CH - PT - PB;
 
-  ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('Treaba mica / zi (ultimele 7 zile)', 10, 24);
+  // White card bg
+  ctx.fillStyle = '#f8fafd';
+  ctx.fillRect(0, 0, CW, CH);
 
-  const max = Math.max(1, ...data.map(d => d.value));
+  // Title
+  ctx.fillStyle = '#1a2e4a'; ctx.font = 'bold 17px Arial'; ctx.textAlign = 'left';
+  ctx.fillText(title, PL, 30);
+
+  const rawMax = Math.max(...data.map(d => d.value), 1);
+  const step   = rawMax <= 5 ? 1 : rawMax <= 10 ? 2 : rawMax <= 20 ? 5 : rawMax <= 100 ? 10 : 100;
+  const gMax   = Math.ceil(rawMax / step) * step;
   const n = data.length;
   const slotW = chartW / n;
-  const barW = Math.max(14, slotW * 0.52);
+  const barW  = Math.max(20, slotW * 0.55);
 
-  for (let v = 0; v <= max; v++) {
-    const gy = PT + chartH - (v / max) * chartH;
-    ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 1;
+  // Grid
+  for (let v = 0; v <= gMax; v += step) {
+    const gy = PT + chartH - (v / gMax) * chartH;
+    ctx.strokeStyle = v === 0 ? '#cccccc' : '#eeeeee';
+    ctx.lineWidth   = v === 0 ? 1.5 : 1;
     ctx.beginPath(); ctx.moveTo(PL, gy); ctx.lineTo(CW - PR, gy); ctx.stroke();
-    ctx.fillStyle = '#aaaaaa'; ctx.font = '11px Arial'; ctx.textAlign = 'right';
-    ctx.fillText(String(v), PL - 4, gy + 4);
+    ctx.fillStyle = '#aaaaaa'; ctx.font = '12px Arial'; ctx.textAlign = 'right';
+    ctx.fillText(String(v), PL - 6, gy + 4);
   }
 
+  // Bars + labels
   data.forEach((d, i) => {
-    const bx = PL + i * slotW + (slotW - barW) / 2;
+    const bx    = PL + i * slotW + (slotW - barW) / 2;
     const baseY = PT + chartH;
-    const bh = (d.value / max) * chartH;
-    ctx.fillStyle = '#8ec5ff';
-    if (bh > 0) ctx.fillRect(bx, baseY - bh, barW, bh);
+    const bh    = (d.value / gMax) * chartH;
+    if (bh > 0) { ctx.fillStyle = barColor; ctx.fillRect(bx, baseY - bh, barW, bh); }
     if (d.value > 0) {
-      ctx.fillStyle = '#333333'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
-      ctx.fillText(String(d.value), bx + barW / 2, Math.max(baseY - bh - 4, PT + 14));
+      ctx.fillStyle = '#333333'; ctx.font = 'bold 13px Arial'; ctx.textAlign = 'center';
+      const lbl = d.label || String(d.value);
+      ctx.fillText(lbl, bx + barW / 2, Math.max(PT + 18, baseY - bh - 5));
     }
-    ctx.fillStyle = '#666666'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(d.day, bx + barW / 2, baseY + 18);
-  });
-
-  return c.toDataURL('image/png');
-}
-
-function buildPdfStoolChartImg() {
-  const data = getLastNDates(7).map(date => ({
-    day: formatShortDay(date),
-    value: getEntriesForDate(date).filter(e => e.type === 'stool').length,
-  }));
-  const CW = 700, CH = 260;
-  const { c, ctx } = _pdfCanvas(CW, CH);
-  const PL = 28, PR = 10, PT = 36, PB = 30;
-  const chartW = CW - PL - PR;
-  const chartH = CH - PT - PB;
-
-  ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('Treaba mare / zi (ultimele 7 zile)', 10, 24);
-
-  const max = Math.max(1, ...data.map(d => d.value));
-  const n = data.length;
-  const slotW = chartW / n;
-  const barW = Math.max(14, slotW * 0.52);
-
-  for (let v = 0; v <= max; v++) {
-    const gy = PT + chartH - (v / max) * chartH;
-    ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(PL, gy); ctx.lineTo(CW - PR, gy); ctx.stroke();
-    ctx.fillStyle = '#aaaaaa'; ctx.font = '11px Arial'; ctx.textAlign = 'right';
-    ctx.fillText(String(v), PL - 4, gy + 4);
-  }
-
-  data.forEach((d, i) => {
-    const bx = PL + i * slotW + (slotW - barW) / 2;
-    const baseY = PT + chartH;
-    const bh = (d.value / max) * chartH;
-    ctx.fillStyle = '#d7b48b';
-    if (bh > 0) ctx.fillRect(bx, baseY - bh, barW, bh);
-    if (d.value > 0) {
-      ctx.fillStyle = '#333333'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
-      ctx.fillText(String(d.value), bx + barW / 2, Math.max(baseY - bh - 4, PT + 14));
-    }
-    ctx.fillStyle = '#666666'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(d.day, bx + barW / 2, baseY + 18);
-  });
-
-  return c.toDataURL('image/png');
-}
-
-function buildPdfFeedingIntervalsChartImg() {
-  const data = getFeedingIntervalsLast7Days();
-  const CW = 700, CH = 260;
-  const { c, ctx } = _pdfCanvas(CW, CH);
-  const PL = 42, PR = 12, PT = 36, PB = 30;
-  const chartW = CW - PL - PR;
-  const chartH = CH - PT - PB;
-
-  ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('Interval mediu hraniri / zi - minute (ultimele 7 zile)', 10, 24);
-
-  const vals = data.map(d => d.avgMin || 0);
-  const max = Math.max(60, ...vals);
-  const gridMax = Math.ceil(max / 60) * 60;
-
-  for (let v = 0; v <= gridMax; v += 60) {
-    const gy = PT + chartH - (v / gridMax) * chartH;
-    ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(PL, gy); ctx.lineTo(CW - PR, gy); ctx.stroke();
-    ctx.fillStyle = '#aaaaaa'; ctx.font = '11px Arial'; ctx.textAlign = 'right';
-    ctx.fillText(String(v), PL - 4, gy + 4);
-  }
-
-  const n = data.length;
-  const stepX = chartW / Math.max(1, n - 1);
-  const pts = data.map((d, i) => ({
-    x: PL + i * stepX,
-    y: PT + chartH - ((d.avgMin || 0) / gridMax) * chartH,
-    val: d.avgMin || 0, day: d.day,
-  }));
-
-  if (pts.length > 1) {
-    ctx.strokeStyle = '#4a90d9'; ctx.lineWidth = 2.5;
-    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.stroke();
-  }
-
-  pts.forEach(p => {
-    ctx.fillStyle = '#2c6fad'; ctx.beginPath();
-    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#666666'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(p.day, p.x, PT + chartH + 18);
-    if (p.val > 0) {
-      ctx.fillStyle = '#333333'; ctx.font = 'bold 10px Arial';
-      ctx.fillText(p.val + 'm', p.x, p.y - 9);
-    }
+    ctx.fillStyle = '#666666'; ctx.font = '13px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(d.day, bx + barW / 2, baseY + 22);
   });
 
   return c.toDataURL('image/png');
@@ -2075,115 +2044,208 @@ function buildPdfFeedingIntervalsChartImg() {
 
 function buildPdfMealMlChartImg() {
   const data = getLastNDates(7).map(date => {
-    const meals = getEntriesForDate(date).filter(e => e.type === 'meal' && e.milkType === 'formula');
-    return { day: formatShortDay(date), totalMl: meals.reduce((s, m) => s + (m.ml || 0), 0) };
+    const total = getEntriesForDate(date)
+      .filter(e => e.type === 'meal' && e.milkType === 'formula')
+      .reduce((s, m) => s + (m.ml || 0), 0);
+    return { day: formatShortDay(date), value: total, label: total > 0 ? total + 'ml' : '0' };
   });
+  return _buildBarChartImg('Ml formula / zi (ultimele 7 zile)', data, '#4A90D9');
+}
 
-  const CW = 700, CH = 260;
+function buildPdfUrineChartImg() {
+  const data = getLastNDates(7).map(date => ({
+    day: formatShortDay(date),
+    value: getEntriesForDate(date).filter(e => e.type === 'urine').length,
+  }));
+  return _buildBarChartImg('Treaba mica / zi (ultimele 7 zile)', data, '#E89C20');
+}
+
+function buildPdfStoolChartImg() {
+  const data = getLastNDates(7).map(date => ({
+    day: formatShortDay(date),
+    value: getEntriesForDate(date).filter(e => e.type === 'stool').length,
+  }));
+  return _buildBarChartImg('Treaba mare / zi (ultimele 7 zile)', data, '#8B6226');
+}
+
+function buildPdfWeightChartImg() {
+  const baby = getActiveBaby();
+  const birth = baby?.birthDate ? new Date(baby.birthDate) : null;
+  const allRecords = getGrowthRecordsForActiveBaby()
+    .filter(r => Number.isFinite(Number(r.weightKg)));
+  if (!allRecords.length) return null;
+
+  // Use fractional months for x-positioning so all records plot individually,
+  // even when multiple measurements fall within the same integer month.
+  const _mFrac = date => {
+    if (!birth) return 0;
+    const days = Math.max(0, Math.floor((new Date(date) - birth) / 86400000));
+    return days / 30.4375;
+  };
+
+  // All records sorted by date — no deduplication
+  const sorted = allRecords
+    .map(r => ({ mFrac: _mFrac(r.date), mInt: ageMonthsForRecord(r.date) ?? 0, v: Number(r.weightKg), date: r.date }))
+    .sort((a, b) => a.mFrac - b.mFrac);
+
+  // 6-month visible window covering all baby data
+  const maxBabyM = sorted.length ? Math.max(...sorted.map(p => p.mInt)) : 5;
+  const endM   = Math.min(12, Math.max(6, maxBabyM));
+  const startM = Math.max(0, endM - 6);
+  const mRange = endM - startM;
+
+  const CW = 700, CH = 420;
   const { c, ctx } = _pdfCanvas(CW, CH);
-  const PL = 44, PR = 10, PT = 36, PB = 30;
-  const chartW = CW - PL - PR;
-  const chartH = CH - PT - PB;
+  const PL = 52, PR = 80, PT = 44, PB = 46;
+  const chartW = CW - PL - PR, chartH = CH - PT - PB;
 
-  ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('Ml formula / zi (ultimele 7 zile)', 10, 24);
+  const dataset = WHO_GROWTH.weightKg;
+  const visVals = [...Array(mRange + 1).keys()].map(i => startM + i);
+  const minV = Math.min(...visVals.map(m => dataset.p3[m])) * 0.93;
+  const maxV = Math.max(...visVals.map(m => dataset.p97[m])) * 1.05;
+  // toX accepts fractional or integer months
+  const toX = m => PL + ((m - startM) / mRange) * chartW;
+  const toY = v => PT + chartH - ((v - minV) / (maxV - minV)) * chartH;
 
-  const max = Math.max(50, ...data.map(d => d.totalMl));
-  const gridMax = Math.ceil(max / 100) * 100;
-  const n = data.length;
-  const slotW = chartW / n;
-  const barW = Math.max(14, slotW * 0.52);
+  // Background
+  ctx.fillStyle = '#f8fafd'; ctx.fillRect(0, 0, CW, CH);
 
-  for (let v = 0; v <= gridMax; v += 100) {
-    const gy = PT + chartH - (v / gridMax) * chartH;
+  // Title
+  ctx.fillStyle = '#1a2e4a'; ctx.font = 'bold 17px Arial'; ctx.textAlign = 'left';
+  ctx.fillText('Evolutie greutate (kg) — curbe WHO', PL, 30);
+
+  // Y grid lines
+  const yGridStep = (maxV - minV) <= 3 ? 0.5 : 1;
+  const yStart = Math.ceil(minV / yGridStep) * yGridStep;
+  for (let v = yStart; v <= maxV + 0.01; v += yGridStep) {
+    const gy = toY(v);
     ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(PL, gy); ctx.lineTo(CW - PR, gy); ctx.stroke();
-    ctx.fillStyle = '#aaaaaa'; ctx.font = '11px Arial'; ctx.textAlign = 'right';
-    ctx.fillText(String(v), PL - 4, gy + 4);
+    ctx.fillStyle = '#999999'; ctx.font = '11px Arial'; ctx.textAlign = 'right';
+    ctx.fillText(v.toFixed(1), PL - 5, gy + 4);
   }
 
-  data.forEach((d, i) => {
-    const bx = PL + i * slotW + (slotW - barW) / 2;
-    const baseY = PT + chartH;
-    const bh = (d.totalMl / gridMax) * chartH;
-    ctx.fillStyle = '#7bc8f6';
-    if (bh > 0) ctx.fillRect(bx, baseY - bh, barW, bh);
-    if (d.totalMl > 0) {
-      ctx.fillStyle = '#333333'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
-      ctx.fillText(d.totalMl + 'ml', bx + barW / 2, Math.max(baseY - bh - 4, PT + 14));
+  // WHO percentile lines (dashed) + right-side legend
+  const whoLines = [
+    { key: 'p3',  color: '#f59595', label: 'P3'  },
+    { key: 'p15', color: '#f6c462', label: 'P15' },
+    { key: 'p50', color: '#6cc96c', label: 'P50' },
+    { key: 'p85', color: '#f6c462', label: 'P85' },
+    { key: 'p97', color: '#72bfda', label: 'P97' },
+  ];
+  const legX = CW - PR + 8, legSpacing = chartH / 6;
+  whoLines.forEach(({ key, color, label: lbl }, idx) => {
+    ctx.strokeStyle = color; ctx.lineWidth = 1.8;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    for (let mi = startM; mi <= endM; mi++) {
+      const x = toX(mi), y = toY(dataset[key][mi]);
+      mi === startM ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
-    ctx.fillStyle = '#666666'; ctx.font = '12px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(d.day, bx + barW / 2, baseY + 18);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const legY = PT + (idx + 0.5) * legSpacing;
+    ctx.fillStyle = color; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'left';
+    ctx.fillText(lbl, legX, legY + 4);
   });
+
+  // Baby line legend entry
+  ctx.strokeStyle = '#4A90D9'; ctx.lineWidth = 2.5; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(legX, PT + 5.5 * legSpacing + 4); ctx.lineTo(legX + 18, PT + 5.5 * legSpacing + 4); ctx.stroke();
+  ctx.fillStyle = '#4A90D9'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'left';
+  ctx.fillText('Bebe', legX + 22, PT + 5.5 * legSpacing + 8);
+
+  // Baby connecting line (uses fractional x)
+  if (sorted.length > 1) {
+    ctx.strokeStyle = '#4A90D9'; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    sorted.forEach((p, i) => i === 0 ? ctx.moveTo(toX(p.mFrac), toY(p.v)) : ctx.lineTo(toX(p.mFrac), toY(p.v)));
+    ctx.stroke();
+  }
+
+  // Data points + labels — alternate above/below to prevent overlap
+  // Track placed label y-ranges per above/below side to nudge if needed
+  const usedAbove = [], usedBelow = [];
+  sorted.forEach((p, i) => {
+    const px = toX(p.mFrac), py = toY(p.v);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#4A90D9';
+    ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+
+    const above = (i % 2 === 0);
+    let ly = above ? py - 14 : py + 26;
+    // Nudge if overlapping a previously placed label on the same side
+    const used = above ? usedAbove : usedBelow;
+    const LABEL_H = 16;
+    for (const [ux, uy] of used) {
+      if (Math.abs(px - ux) < 55 && Math.abs(ly - uy) < LABEL_H) {
+        ly = above ? Math.min(uy - LABEL_H, ly) : Math.max(uy + LABEL_H, ly);
+      }
+    }
+    ly = above ? Math.max(PT + 14, ly) : Math.min(PT + chartH - 6, ly);
+    used.push([px, ly]);
+
+    ctx.fillStyle = '#1a2e4a'; ctx.font = 'bold 14px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(`${p.v.toFixed(2)} kg`, px, ly);
+  });
+
+  // X axis labels (integer months)
+  for (let m = startM; m <= endM; m++) {
+    ctx.fillStyle = '#888888'; ctx.font = '13px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(`${m}L`, toX(m), PT + chartH + 26);
+  }
+
+  // X axis title
+  ctx.fillStyle = '#aaaaaa'; ctx.font = '11px Arial'; ctx.textAlign = 'center';
+  ctx.fillText('Luna de viata', PL + chartW / 2, CH - 10);
+
+  // Axis lines
+  ctx.strokeStyle = '#cccccc'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(PL, PT); ctx.lineTo(PL, PT + chartH); ctx.lineTo(CW - PR, PT + chartH); ctx.stroke();
 
   return c.toDataURL('image/png');
 }
 
-function buildPdfGrowthChartImg(metricKey, title, unit, valueAccessor) {
-  const records = getGrowthRecordsForActiveBaby();
-  if (!records.length) return null;
+// ─── PDF DATA HELPERS ────────────────────────────────────────
 
-  const CW = 700, CH = 280;
-  const { c, ctx } = _pdfCanvas(CW, CH);
-  const PL = 44, PR = 54, PT = 36, PB = 28;
-  const chartW = CW - PL - PR;
-  const chartH = CH - PT - PB;
+function _pdfSafe(str) {
+  return String(str || '')
+    .replace(/[ăĂ]/g, m => m === 'ă' ? 'a' : 'A')
+    .replace(/[șȘ]/g, m => m === 'ș' ? 's' : 'S')
+    .replace(/[țȚ]/g, m => m === 'ț' ? 't' : 'T');
+}
 
-  ctx.fillStyle = '#222222'; ctx.font = 'bold 16px Arial'; ctx.textAlign = 'left';
-  ctx.fillText(title, 10, 24);
+function _pdfNextVaccine(baby) {
+  if (!baby?.birthDate) return { name: '—', date: '' };
+  const activeId = state.activeBabyId || getActiveBabyId();
+  const done = new Set(
+    loadVaccineRecords().filter(r => r.babyId === activeId && r.done).map(r => r.vaccineId)
+  );
+  const birth = new Date(baby.birthDate);
+  const upcoming = VACCINE_SCHEDULE_RO
+    .filter(v => !done.has(v.id))
+    .map(v => { const d = new Date(birth); d.setDate(d.getDate() + v.dueDays); return { v, d }; })
+    .sort((a, b) => a.d - b.d);
+  if (!upcoming.length) return { name: 'Toate efectuate', date: '' };
+  const { v, d } = upcoming[0];
+  const shortName = v.name.split('(')[0].trim().slice(0, 22);
+  const dateStr = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  return { name: shortName, date: dateStr };
+}
 
-  const dataset = WHO_GROWTH[metricKey];
-  const maxM = 12;
-  const minV = dataset.p3[0] * 0.96;
-  const maxV = dataset.p97[maxM] * 1.04;
-  const toX = m => PL + (m / maxM) * chartW;
-  const toY = v => PT + chartH - ((v - minV) / (maxV - minV)) * chartH;
-
-  const whoLines = [
-    { key: 'p3',  color: '#f2b6b6', label: 'P3'  },
-    { key: 'p15', color: '#f6c896', label: 'P15' },
-    { key: 'p50', color: '#98d898', label: 'P50' },
-    { key: 'p85', color: '#f6c896', label: 'P85' },
-    { key: 'p97', color: '#9fd0d8', label: 'P97' },
-  ];
-
-  const legendX = toX(maxM) + 8;
-  const legendSlot = chartH / 5;
-  whoLines.forEach(({ key, color, label }, idx) => {
-    const pts = dataset[key];
-    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    pts.forEach((v, m) => m === 0 ? ctx.moveTo(toX(m), toY(v)) : ctx.lineTo(toX(m), toY(v)));
-    ctx.stroke();
-    const legY = PT + (idx + 0.5) * legendSlot;
-    ctx.fillStyle = color; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'left';
-    ctx.fillText(label, legendX, legY + 4);
-  });
-
-  records.forEach(r => {
-    const m = ageMonthsForRecord(r.date);
-    const v = valueAccessor(r);
-    if (m === null || !Number.isFinite(v)) return;
-    ctx.fillStyle = '#e74c3c';
-    ctx.beginPath(); ctx.arc(toX(m), toY(v), 8, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.fillStyle = '#222222'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(`${v}${unit}`, toX(m), toY(v) - 12);
-  });
-
-  for (let m = 0; m <= maxM; m++) {
-    ctx.fillStyle = '#888888'; ctx.font = '10px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(`${m}L`, toX(m), PT + chartH + 16);
-  }
-  const yStep = (maxV - minV) / 4;
-  for (let i = 0; i <= 4; i++) {
-    const v = minV + i * yStep;
-    ctx.fillStyle = '#aaaaaa'; ctx.font = '10px Arial'; ctx.textAlign = 'right';
-    ctx.fillText(v.toFixed(1), PL - 4, toY(v) + 3);
-  }
-  ctx.fillStyle = '#999999'; ctx.font = '10px Arial'; ctx.textAlign = 'left';
-  ctx.fillText('Curbe WHO: P3/P15/P50/P85/P97  |  Axa X: luna de viata', PL, CH - 8);
-  return c.toDataURL('image/png');
+function _pdfLastWeight() {
+  const recs = getGrowthRecordsForActiveBaby()
+    .filter(r => Number.isFinite(Number(r.weightKg)))
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  if (!recs.length) return { weight: '—', date: '' };
+  const r = recs[0];
+  const d = new Date(r.date);
+  return {
+    weight: `${Number(r.weightKg).toFixed(3)} kg`,
+    date:   `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`,
+  };
 }
 
 // ─── PDF EXPORT ──────────────────────────────────────────────
@@ -2191,8 +2253,10 @@ function pdfEntryLine(e) {
   let label = '', detail = '';
   if (e.type === 'meal') {
     label  = 'Hranire';
-    detail = e.milkType === 'breast' ? `san — ${e.duration || '?'} min` : `formula — ${e.ml || 0} ml`;
-    if (e.notes) detail += `  (${e.notes.slice(0, 40)})`;
+    detail = e.milkType === 'breast'
+      ? `san — ${e.duration || '?'} min`
+      : `formula — ${e.ml || 0} ml`;
+    if (e.notes) detail += `  (${e.notes.slice(0, 36)})`;
   } else if (e.type === 'urine') {
     label  = 'Treaba mica';
     detail = urineColorLabel(e.color);
@@ -2209,39 +2273,37 @@ function pdfEntryLine(e) {
 async function exportPrint() {
   const jsPdfNs = window.jspdf;
   if (!jsPdfNs?.jsPDF) {
-    showModal(
-      'Export PDF indisponibil',
+    showModal('Export PDF indisponibil',
       'Lipseste libraria jsPDF. Verificati conexiunea si reincercati.',
-      () => exportPrint()
-    );
+      () => exportPrint());
     return;
   }
 
-  const baby   = getActiveBaby();
-  const period = state.reportPeriod;
+  const baby    = getActiveBaby();
+  const period  = state.reportPeriod;
   const genDate = new Date().toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-  let entries, titleText, periodLabel, pdfFileName;
+  let entries, periodLabel, pdfFileName, periodTypeLabel;
   if (period === 'saptamana') {
     const { monday, sunday } = getWeekBounds(state.reportWeekOffset);
-    entries     = getEntriesForRange(monday, sunday);
-    titleText   = 'RoBby  -  Raport saptamanal';
-    const fmt   = { day: 'numeric', month: 'short' };
-    periodLabel = `${monday.toLocaleDateString('ro-RO', fmt)} - ${sunday.toLocaleDateString('ro-RO', fmt)}`;
-    pdfFileName = `robby-saptamana-${monday.toISOString().slice(0, 10)}.pdf`;
+    entries         = getEntriesForRange(monday, sunday);
+    periodTypeLabel = 'Raport Saptamanal';
+    const fmt       = { day: 'numeric', month: 'short' };
+    periodLabel     = `${monday.toLocaleDateString('ro-RO', fmt)} - ${sunday.toLocaleDateString('ro-RO', fmt)}`;
+    pdfFileName     = `robby-saptamana-${monday.toISOString().slice(0, 10)}.pdf`;
   } else if (period === 'luna') {
-    const { first, last } = getMonthBounds(state.reportMonthOffset);
-    entries     = getEntriesForRange(first, last);
-    titleText   = 'RoBby  -  Raport lunar';
-    const ml    = first.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' });
-    periodLabel = ml.charAt(0).toUpperCase() + ml.slice(1);
-    pdfFileName = `robby-luna-${first.toISOString().slice(0, 7)}.pdf`;
+    const { first } = getMonthBounds(state.reportMonthOffset);
+    entries         = getEntriesForRange(first, getMonthBounds(state.reportMonthOffset).last);
+    periodTypeLabel = 'Raport Lunar';
+    const ml        = first.toLocaleDateString('ro-RO', { month: 'long', year: 'numeric' });
+    periodLabel     = ml.charAt(0).toUpperCase() + ml.slice(1);
+    pdfFileName     = `robby-luna-${first.toISOString().slice(0, 7)}.pdf`;
   } else {
-    entries     = getEntriesForDate(state.reportDate);
-    titleText   = 'RoBby  -  Raport zilnic';
-    const rd    = new Date(state.reportDate);
-    periodLabel = `${String(rd.getDate()).padStart(2,'0')}/${String(rd.getMonth()+1).padStart(2,'0')}/${rd.getFullYear()}`;
-    pdfFileName = `robby-raport-${new Date(state.reportDate).toISOString().slice(0, 10)}.pdf`;
+    entries         = getEntriesForDate(state.reportDate);
+    periodTypeLabel = 'Raport Zilnic';
+    const rd        = new Date(state.reportDate);
+    periodLabel     = `${String(rd.getDate()).padStart(2,'0')}/${String(rd.getMonth()+1).padStart(2,'0')}/${rd.getFullYear()}`;
+    pdfFileName     = `robby-raport-${new Date(state.reportDate).toISOString().slice(0, 10)}.pdf`;
   }
 
   const meals        = entries.filter(e => e.type === 'meal');
@@ -2250,285 +2312,311 @@ async function exportPrint() {
   const meds         = entries.filter(e => e.type === 'medication');
   const totalMl      = meals.filter(m => m.milkType === 'formula').reduce((s, m) => s + (m.ml || 0), 0);
   const breastMeals  = meals.filter(m => m.milkType === 'breast');
-  const formulaMeals = meals.filter(m => m.milkType === 'formula');
 
   const { jsPDF } = jsPdfNs;
   setPdfProgress('Generez pagina 1...');
-  try {
-    const doc    = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-    const pageW  = doc.internal.pageSize.getWidth();
-    const pageH  = doc.internal.pageSize.getHeight();
-    const ML     = 20; // left margin
-    const MR     = 20; // right margin
-    const CW     = pageW - ML - MR; // content width
-    const FOOTER = 14; // footer area height
 
-    // Type accent colors [R,G,B]
+  try {
+    const doc   = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const ML = 15, MR = 15;
+    const CW = pageW - ML - MR;        // 180 mm
+    const HDR_H = 22;                  // blue header bar height
+    const CS    = HDR_H + 7;           // content start y
+    const CE    = pageH - 16;          // content end y (above footer)
+    const BLU   = [74, 144, 217];      // brand blue
+
+    // ── Shared: draw blue header bar ─────────────────────────
+    const drawHeader = (left, right) => {
+      doc.setFillColor(...BLU);
+      doc.rect(0, 0, pageW, HDR_H, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text(_pdfSafe(left),  ML, HDR_H * 0.65);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(_pdfSafe(right), pageW - MR, HDR_H * 0.65, { align: 'right' });
+      doc.setTextColor(30, 30, 30);
+    };
+
+    // ── Shared: add new page with header, return content start y
+    const newPage = (left, right) => { doc.addPage(); drawHeader(left, right); return CS; };
+
+    // ── Shared: section divider bar ──────────────────────────
+    const sectionBar = (label, y) => {
+      doc.setFillColor(...BLU);
+      doc.rect(ML, y, CW, 6.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(255, 255, 255);
+      doc.text(_pdfSafe(label), ML + 3, y + 4.5);
+      doc.setTextColor(30, 30, 30);
+      return y + 8.5;
+    };
+
+    // ── Entry row renderer ───────────────────────────────────
     const TYPE_COLOR = {
       meal:       [74,  144, 217],
       urine:      [232, 156,  32],
       stool:      [139,  98,  38],
       medication: [46,  158, 107],
     };
-
-    const addPageHeader = (titleRight) => {
-      // Left: RoBby logo text
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(18);
-      doc.setTextColor(74, 144, 217);
-      doc.text('RoBby', ML, 14);
-      // Right: title text
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      doc.text(titleRight, pageW - MR, 14, { align: 'right' });
-      // Blue divider
-      doc.setDrawColor(74, 144, 217);
-      doc.setLineWidth(0.6);
-      doc.line(ML, 18, pageW - MR, 18);
-      doc.setTextColor(30, 30, 30);
-      doc.setLineWidth(0.3);
-    };
-
-    // Entry row with left accent bar
-    const renderEntryRow = (e, y, rowIdx) => {
+    const ROW_H = 6.8;
+    const renderRow = (e, y, idx) => {
       const { label, detail } = pdfEntryLine(e);
-      if (!label) return y;
-      const rowH = 7.5;
-      // Alternating row background
-      if (rowIdx % 2 === 0) {
-        doc.setFillColor(248, 250, 253);
-        doc.rect(ML, y - 5.5, CW, rowH, 'F');
+      if (!label) return y + ROW_H;
+      if (idx % 2 === 0) {
+        doc.setFillColor(246, 249, 254);
+        doc.rect(ML, y, CW, ROW_H, 'F');
       }
-      // Left accent bar
       const [r, g, b] = TYPE_COLOR[e.type] || [150, 150, 150];
+      const cy = y + ROW_H / 2;
       doc.setFillColor(r, g, b);
-      doc.rect(ML, y - 5.5, 2.5, rowH, 'F');
-      // Time
-      doc.setFontSize(8.5);
-      doc.setTextColor(140, 140, 140);
-      const timeStr = formatTime(e.timestamp);
-      doc.text(timeStr, ML + 5, y - 0.5);
-      const timeW = doc.getTextWidth(timeStr);
-      // Label
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(30, 30, 30);
-      doc.text(label, ML + 5 + timeW + 3, y - 0.5);
-      const labelW = doc.getTextWidth(label);
-      // Detail
+      doc.circle(ML + 3.8, cy, 2.3, 'F');
+      const ty = cy + 1.2;
+      doc.setFontSize(9); doc.setFont('helvetica', 'bold');
+      doc.setTextColor(95, 95, 95);
+      const ts = formatTime(e.timestamp);
+      doc.text(ts, ML + 9, ty);
+      const tw = doc.getTextWidth(ts);
+      doc.setTextColor(r, g, b);
+      const sl = _pdfSafe(label);
+      doc.text(sl, ML + 9 + tw + 2, ty);
+      const lw = doc.getTextWidth(sl);
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(80, 80, 80);
-      const maxDetailW = CW - (5 + timeW + 3 + labelW + 3);
-      const detailStr  = detail.length > 90 ? detail.slice(0, 90) + '...' : detail;
-      doc.text(detailStr, ML + 5 + timeW + 3 + labelW + 3, y - 0.5, { maxWidth: Math.max(maxDetailW, 10) });
-      doc.setTextColor(30, 30, 30);
-      return y + rowH;
+      doc.setTextColor(55, 55, 55);
+      const dx = ML + 9 + tw + 2 + lw + 2;
+      const mw = CW - (9 + tw + 2 + lw + 2);
+      if (mw > 10) doc.text(_pdfSafe(detail), dx, ty, { maxWidth: mw });
+      return y + ROW_H;
     };
 
-    // ── PAGE 1: Header + Summary grid + Journal ───────────────
-    const babyNameLabel = baby?.name || '—';
-    addPageHeader(`${babyNameLabel}  |  ${periodLabel}`);
-    let y = 26;
-
-    // Baby age sub-line
+    // ─────────────────────────────────────────────────────────
+    // PAGE 1 — RAPORT
+    // ─────────────────────────────────────────────────────────
+    const babyName = _pdfSafe(baby?.name || '—');
+    let ageStr = '';
     if (baby?.birthDate) {
       const ageDays = Math.floor((Date.now() - new Date(baby.birthDate)) / 86400000);
       const ageM    = Math.floor(ageDays / 30.4375);
       const ageW    = Math.floor(ageDays / 7);
-      const ageStr  = ageM > 0 ? `${ageM} lun${ageM === 1 ? 'a' : 'i'} (${ageW} sapt.)` : `${ageW} saptamani`;
-      doc.setFontSize(9);
-      doc.setTextColor(110, 110, 110);
-      doc.text(`Varsta: ${ageStr}  ·  Generat: ${genDate}`, ML, y);
-      doc.setTextColor(30, 30, 30);
-      y += 6;
+      ageStr = ageM > 0 ? `${ageM} luni (${ageW} sapt.)` : `${ageW} sapt.`;
     }
+    drawHeader(
+      `RoBby  ·  ${periodTypeLabel}`,
+      `${babyName}${ageStr ? '  ·  ' + ageStr : ''}  ·  ${periodLabel}`
+    );
+    let y = CS;
 
-    // 2x3 summary grid
+    // ── Summary grid 2×3 ─────────────────────────────────────
+    const vacInfo = _pdfNextVaccine(baby);
+    const wtInfo  = _pdfLastWeight();
     const isMonth = period === 'luna';
     const dayCount = isMonth ? new Set(entries.map(e => new Date(e.timestamp).toDateString())).size : 0;
     const avgMl    = isMonth && dayCount > 0 ? Math.round(totalMl / dayCount) : 0;
 
     const gridItems = [
-      { icon: 'Hraniri',     val: String(meals.length),    sub: `${formulaMeals.length} formula` },
-      { icon: 'Total ml',    val: `${totalMl} ml`,          sub: `san: ${breastMeals.length}` },
-      { icon: 'Treaba mica', val: String(urines.length),    sub: '' },
-      { icon: 'Treaba mare', val: String(stools.length),    sub: '' },
-      { icon: 'Medicatii',   val: String(meds.length),      sub: '' },
-      isMonth
-        ? { icon: 'Medie ml/zi', val: avgMl > 0 ? `${avgMl} ml` : '—', sub: `${dayCount} zile` }
-        : { icon: 'Interval',    val: `${getFeedingGuide().intervalHours}h`, sub: 'recomandat' },
+      { lbl: 'Hraniri',          val: String(meals.length),        sub: `${totalMl} ml  ·  ${breastMeals.length} san` },
+      { lbl: 'Treaba mica',      val: String(urines.length),       sub: '' },
+      { lbl: 'Treaba mare',      val: String(stools.length),       sub: '' },
+      { lbl: 'Medicatie',        val: String(meds.length),         sub: '' },
+      { lbl: 'Vaccin urmator',   val: _pdfSafe(vacInfo.name),      sub: vacInfo.date },
+      { lbl: 'Ultima greutate',  val: wtInfo.weight,               sub: wtInfo.date || (isMonth ? `${dayCount} zile` : '') },
     ];
 
-    const cols  = 3;
-    const gW    = (CW - (cols - 1) * 4) / cols;
-    const gH    = 18;
-    const gTop  = y + 2;
-
+    const cols = 2, gGap = 5, gW = (CW - gGap) / cols, gH = 22, gRowGap = 4;
     gridItems.forEach((item, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const gx  = ML + col * (gW + 4);
-      const gy  = gTop + row * (gH + 4);
-      doc.setFillColor(240, 246, 253);
-      doc.setDrawColor(200, 220, 245);
-      doc.roundedRect(gx, gy, gW, gH, 2, 2, 'FD');
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(120, 140, 170);
-      doc.text(item.icon, gx + gW / 2, gy + 5.5, { align: 'center' });
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(30, 50, 90);
-      doc.text(item.val, gx + gW / 2, gy + 12, { align: 'center' });
+      const col = i % cols, row = Math.floor(i / cols);
+      const gx = ML + col * (gW + gGap);
+      const gy = y + row * (gH + gRowGap);
+      doc.setFillColor(241, 247, 254);
+      doc.setDrawColor(196, 220, 246);
+      doc.roundedRect(gx, gy, gW, gH, 2.5, 2.5, 'FD');
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(115, 145, 180);
+      doc.text(item.lbl, gx + gW / 2, gy + 6.5, { align: 'center' });
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(20, 50, 100);
+      doc.text(item.val, gx + gW / 2, gy + 14.5, { align: 'center', maxWidth: gW - 4 });
       if (item.sub) {
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(7);
-        doc.setTextColor(150, 150, 150);
-        doc.text(item.sub, gx + gW / 2, gy + 16.5, { align: 'center' });
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(150, 155, 165);
+        doc.text(item.sub, gx + gW / 2, gy + 20, { align: 'center', maxWidth: gW - 4 });
       }
     });
+    y += Math.ceil(gridItems.length / cols) * (gH + gRowGap) - gRowGap + 6;
 
-    const gridRows = Math.ceil(gridItems.length / cols);
-    y = gTop + gridRows * (gH + 4) + 4;
-
-    // Journal section header
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(74, 144, 217);
-    const journalTitle = period === 'zi' ? 'JURNAL ZILNIC' : 'JURNAL';
-    doc.text(journalTitle, ML, y);
-    doc.setFont('helvetica', 'normal');
-    doc.setDrawColor(200, 220, 245);
-    doc.setLineWidth(0.4);
-    doc.line(ML, y + 2, pageW - MR, y + 2);
-    doc.setTextColor(30, 30, 30);
-    y += 8;
+    // ── Journal section ───────────────────────────────────────
+    y = sectionBar('JURNAL ACTIVITATE', y);
 
     const sorted = [...entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
     if (!sorted.length) {
-      doc.setFontSize(9);
-      doc.setTextColor(160, 160, 160);
-      doc.text('Nicio inregistrare in aceasta perioada.', ML, y);
+      doc.setFontSize(9); doc.setTextColor(160, 160, 160);
+      doc.text('Nicio inregistrare in aceasta perioada.', ML, y + 5);
       doc.setTextColor(30, 30, 30);
     } else if (period === 'zi') {
-      let rowIdx = 0;
-      sorted.forEach(e => {
-        if (y > pageH - FOOTER - 8) {
-          doc.addPage();
-          addPageHeader(`${babyNameLabel}  |  ${periodLabel} (continuare)`);
-          y = 26;
-          rowIdx = 0;
-        }
-        y = renderEntryRow(e, y, rowIdx++);
-      });
+      let ri = 0;
+      for (const e of sorted) {
+        if (y + ROW_H > CE) { y = newPage(`RoBby  ·  ${periodTypeLabel}`, `${babyName}  ·  ${periodLabel} (cont.)`); ri = 0; }
+        y = renderRow(e, y, ri++);
+      }
     } else {
       const groups = {};
-      sorted.forEach(e => {
-        const key = new Date(e.timestamp).toDateString();
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(e);
-      });
-      const sortedKeys = Object.keys(groups).sort((a, b) => new Date(a) - new Date(b));
-      sortedKeys.forEach(key => {
-        const date       = new Date(key);
-        const dayEntries = groups[key];
-        const dayLabel   = date.toLocaleDateString('ro-RO', { weekday: 'long', day: 'numeric', month: 'long' });
-        if (y > pageH - FOOTER - 28) {
-          doc.addPage();
-          addPageHeader(`${babyNameLabel}  |  ${periodLabel} (continuare)`);
-          y = 26;
-        }
-        // Day header row
-        doc.setFillColor(232, 242, 255);
-        doc.rect(ML, y - 4.5, CW, 7.5, 'F');
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
-        doc.setTextColor(50, 100, 180);
-        doc.text(dayLabel, ML + 2, y + 1);
-        doc.setFont('helvetica', 'normal');
+      sorted.forEach(e => { const k = new Date(e.timestamp).toDateString(); (groups[k] = groups[k] || []).push(e); });
+      for (const key of Object.keys(groups).sort((a, b) => new Date(a) - new Date(b))) {
+        if (y + 12 > CE) { y = newPage(`RoBby  ·  ${periodTypeLabel}`, `${babyName}  ·  ${periodLabel} (cont.)`); }
+        const dlabel = new Date(key).toLocaleDateString('ro-RO', { weekday: 'short', day: 'numeric', month: 'short' });
+        doc.setFillColor(228, 240, 255);
+        doc.rect(ML, y, CW, 6.5, 'F');
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(40, 90, 170);
+        doc.text(_pdfSafe(dlabel), ML + 3, y + 4.5);
         doc.setTextColor(30, 30, 30);
-        y += 7.5;
-        let rowIdx = 0;
-        dayEntries.forEach(e => {
-          if (y > pageH - FOOTER - 8) {
-            doc.addPage();
-            addPageHeader(`${babyNameLabel}  |  ${periodLabel} (continuare)`);
-            y = 26;
-            rowIdx = 0;
-          }
-          y = renderEntryRow(e, y, rowIdx++);
-        });
+        y += 7;
+        let ri = 0;
+        for (const e of groups[key]) {
+          if (y + ROW_H > CE) { y = newPage(`RoBby  ·  ${periodTypeLabel}`, `${babyName}  ·  ${periodLabel} (cont.)`); ri = 0; }
+          y = renderRow(e, y, ri++);
+        }
         y += 3;
-      });
+      }
     }
 
-    // ── Statistics charts page ────────────────────────────────
+    // ─────────────────────────────────────────────────────────
+    // PAGE 2 — STATISTICI
+    // ─────────────────────────────────────────────────────────
     if (settings.pdfIncludeCharts !== false) {
-      doc.addPage();
-      addPageHeader('Statistici  -  ultimele 7 zile');
-      const imgW  = CW;
-      const cH260 = (260 / 700) * imgW;
-      let cy = 24;
-
-      setPdfProgress('Generez graficul treaba mica...');
-      doc.addImage(buildPdfUrineChartImg(), 'PNG', ML, cy, imgW, cH260, undefined, 'FAST');
-      cy += cH260 + 6;
-
-      setPdfProgress('Generez graficul treaba mare...');
-      if (cy + cH260 > pageH - FOOTER) { doc.addPage(); addPageHeader('Statistici (continuare)'); cy = 24; }
-      doc.addImage(buildPdfStoolChartImg(), 'PNG', ML, cy, imgW, cH260, undefined, 'FAST');
-      cy += cH260 + 6;
-
-      setPdfProgress('Generez graficul intervale hraniri...');
-      if (cy + cH260 > pageH - FOOTER) { doc.addPage(); addPageHeader('Statistici (continuare)'); cy = 24; }
-      doc.addImage(buildPdfFeedingIntervalsChartImg(), 'PNG', ML, cy, imgW, cH260, undefined, 'FAST');
-      cy += cH260 + 6;
+      y = newPage('RoBby  ·  Statistici', 'ultimele 7 zile');
+      const imgW = CW;
+      const imgH = (300 / 700) * imgW;  // ≈ 77 mm
+      const gap  = 8;
 
       setPdfProgress('Generez graficul ml formula...');
-      if (cy + cH260 > pageH - FOOTER) { doc.addPage(); addPageHeader('Statistici (continuare)'); cy = 24; }
-      doc.addImage(buildPdfMealMlChartImg(), 'PNG', ML, cy, imgW, cH260, undefined, 'FAST');
+      doc.addImage(buildPdfMealMlChartImg(), 'PNG', ML, y, imgW, imgH, undefined, 'FAST');
+      y += imgH + gap;
+
+      setPdfProgress('Generez graficul treaba mica...');
+      doc.addImage(buildPdfUrineChartImg(), 'PNG', ML, y, imgW, imgH, undefined, 'FAST');
+      y += imgH + gap;
+
+      setPdfProgress('Generez graficul treaba mare...');
+      doc.addImage(buildPdfStoolChartImg(), 'PNG', ML, y, imgW, imgH, undefined, 'FAST');
     }
 
-    // ── Growth charts ─────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────
+    // PAGE 3 — EVOLUTIE GREUTATE
+    // ─────────────────────────────────────────────────────────
     if (settings.pdfIncludeGrowth !== false) {
-      const growthRecords = getGrowthRecordsForActiveBaby();
-      if (growthRecords.length > 0) {
-        doc.addPage();
-        addPageHeader('Curbe de crestere (WHO)');
-        const imgW  = CW;
-        const cH280 = (280 / 700) * imgW;
-        const hasHeight = growthRecords.some(r => Number.isFinite(Number(r.heightCm)));
-        const hasHead   = growthRecords.some(r => Number.isFinite(Number(r.headCm)));
-        let gy = 24;
-        setPdfProgress('Generez graficele de crestere...');
-        const growthDefs = [
-          { key: 'weightKg', title: 'Greutate (kg)', unit: 'kg', acc: r => Number(r.weightKg), show: true },
-          { key: 'heightCm', title: 'Inaltime (cm)', unit: 'cm', acc: r => Number(r.heightCm), show: hasHeight },
-          { key: 'headCm',   title: 'Perimetru cranian (cm)', unit: 'cm', acc: r => Number(r.headCm), show: hasHead },
-        ];
-        for (const { key, title, unit, acc, show } of growthDefs) {
-          if (!show) continue;
-          const img = buildPdfGrowthChartImg(key, title, unit, acc);
-          if (!img) continue;
-          if (gy + cH280 > pageH - FOOTER) { doc.addPage(); addPageHeader('Curbe de crestere (continuare)'); gy = 24; }
-          doc.addImage(img, 'PNG', ML, gy, imgW, cH280, undefined, 'FAST');
-          gy += cH280 + 6;
+      const weightRecs = getGrowthRecordsForActiveBaby()
+        .filter(r => Number.isFinite(Number(r.weightKg)));
+      if (weightRecs.length > 0) {
+        y = newPage('RoBby  ·  Evolutie greutate', babyName);
+        setPdfProgress('Generez graficul de greutate...');
+
+        const wImg = buildPdfWeightChartImg();
+        if (wImg) {
+          const wImgW = CW, wImgH = (420 / 700) * wImgW;  // ≈ 108 mm
+          doc.addImage(wImg, 'PNG', ML, y, wImgW, wImgH, undefined, 'FAST');
+          y += wImgH + 6;
+        }
+
+        // Weight measurements table
+        if (y + 16 < CE) {
+          y = sectionBar('MASURATORI GREUTATE', y);
+          const C1 = 44, C2 = 44, C3 = CW - C1 - C2;
+
+          // Table header
+          doc.setFillColor(220, 234, 250);
+          doc.rect(ML, y, CW, 6.5, 'F');
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(30, 60, 110);
+          doc.text('Data',             ML + C1 / 2,         y + 4.5, { align: 'center' });
+          doc.text('Greutate (kg)',    ML + C1 + C2 / 2,    y + 4.5, { align: 'center' });
+          doc.text('Percentila',       ML + C1 + C2 + C3/2, y + 4.5, { align: 'center' });
+          y += 7;
+
+          const sortedW = [...weightRecs].sort((a, b) => new Date(a.date) - new Date(b.date));
+          sortedW.forEach((r, idx) => {
+            if (y + 6 > CE) return;
+            if (idx % 2 === 0) { doc.setFillColor(246, 250, 255); doc.rect(ML, y, CW, 6, 'F'); }
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(35, 35, 35);
+            const dd = new Date(r.date);
+            const ds = `${String(dd.getDate()).padStart(2,'0')}/${String(dd.getMonth()+1).padStart(2,'0')}/${dd.getFullYear()}`;
+            const kg = Number(r.weightKg).toFixed(3);
+            const mo = ageMonthsForRecord(r.date) ?? 0;
+            const pc = percentileBandForValue('weightKg', mo, Number(r.weightKg));
+            doc.text(ds,             ML + C1 / 2,         y + 4.2, { align: 'center' });
+            doc.text(kg + ' kg',     ML + C1 + C2 / 2,    y + 4.2, { align: 'center' });
+            doc.text(_pdfSafe(pc),   ML + C1 + C2 + C3/2, y + 4.2, { align: 'center' });
+            y += 6;
+          });
+        }
+
+        // ── Percentile explanation box ──────────────────────────
+        y += 8;
+        if (y + 55 < CE) {
+          const bPad = 5, bIndent = 8, bW = CW;
+          const textW = bW - bIndent - 4;
+          const lineH = 4.8, gapH = 2.5;
+
+          doc.setFontSize(9);
+          const para1 = doc.splitTextToSize(
+            _pdfSafe('Percentilele arata pozitia bebelusului fata de 100 de bebelusi de aceeasi varsta si sex, conform standardelor OMS.'),
+            textW
+          );
+          const bLines = [
+            'P3  — mai greu decat  3% dintre bebelusi',
+            'P15 — mai greu decat 15% dintre bebelusi',
+            'P50 — media (jumatatea grupului)',
+            'P85 — mai greu decat 85% dintre bebelusi',
+            'P97 — mai greu decat 97% dintre bebelusi',
+          ];
+          const note = doc.splitTextToSize(
+            _pdfSafe('O valoare intre P15 si P85 este considerata normala. Consultati medicul pediatru pentru interpretarea corecta.'),
+            textW
+          );
+          const bH = bPad + 6 + gapH + para1.length * lineH + gapH + bLines.length * lineH + gapH + note.length * lineH + bPad;
+
+          // Light blue background
+          doc.setFillColor(235, 245, 255);
+          doc.rect(ML, y, bW, bH, 'F');
+          // Blue left border
+          doc.setFillColor(...BLU);
+          doc.rect(ML, y, 3, bH, 'F');
+
+          let ty = y + bPad + 4;
+          // Title
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(30, 60, 110);
+          doc.text(_pdfSafe('Despre percentile'), ML + bIndent, ty);
+          ty += 6 + gapH;
+          // Paragraph
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(40, 40, 40);
+          para1.forEach(line => { doc.text(line, ML + bIndent, ty); ty += lineH; });
+          ty += gapH;
+          // Bullet list
+          bLines.forEach(line => { doc.text(line, ML + bIndent, ty); ty += lineH; });
+          ty += gapH;
+          // Closing note (italic)
+          doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5);
+          note.forEach(line => { doc.text(line, ML + bIndent, ty); ty += lineH; });
+
+          doc.setFont('helvetica', 'normal'); doc.setTextColor(30, 30, 30);
+          y += bH + 4;
         }
       }
     }
 
-    // ── Footer on every page ──────────────────────────────────
+    // ─────────────────────────────────────────────────────────
+    // FOOTER — on every page
+    // ─────────────────────────────────────────────────────────
     const totalPages = doc.getNumberOfPages();
     for (let pg = 1; pg <= totalPages; pg++) {
       doc.setPage(pg);
-      doc.setDrawColor(210, 210, 210);
+      doc.setDrawColor(210, 215, 220);
       doc.setLineWidth(0.3);
-      doc.line(ML, pageH - 10, pageW - MR, pageH - 10);
-      doc.setFontSize(7.5);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(160, 160, 160);
-      doc.text(`RoBby  ·  Generat pe ${genDate}  ·  Pagina ${pg} din ${totalPages}`, pageW / 2, pageH - 5, { align: 'center' });
+      doc.line(ML, pageH - 13, pageW - MR, pageH - 13);
+      doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(160, 160, 160);
+      doc.text(
+        `RoBby  ·  Tracker nou-nascut  ·  Generat: ${genDate}  ·  Pagina ${pg} din ${totalPages}`,
+        pageW / 2, pageH - 6.5, { align: 'center' }
+      );
     }
 
     setPdfProgress('Finalizez fisierul PDF...');
